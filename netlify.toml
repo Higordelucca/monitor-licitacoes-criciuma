@@ -1,0 +1,6 @@
+# O site mora em web/; o resto do repositório é o collector e as migrations,
+# que o Netlify não constrói.
+[build]
+  base = "web"
+  command = "npm run build"
+  publish = ".next"

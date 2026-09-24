@@ -22,3 +22,6 @@ web/.netlify/
 # web/CLAUDE.md e web/AGENTS.md são recriados pelo próprio `next dev`.
 *.md
 *.pdf
+
+# Ligação local com o site no Netlify (netlify link).
+.netlify/
