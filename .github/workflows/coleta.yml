@@ -3,7 +3,7 @@ name: Coleta PNCP
 # Coleta incremental (ver CLAUDE.md, "Atualização contínua"):
 #   rápida   a cada 30 min — pega licitação nova e confere pelo /historico as
 #            abertas e as em análise ou suspensas que se mexeram nos últimos
-#            180 dias. ~2,5 min no Actions.
+#            180 dias. ~1,5 min no Actions.
 #   completa todo dia de madrugada — confere todas pelo /historico, inclusive
 #            homologadas que ganharam ata ou contrato. 49 min em 2026-09-24, com o
 #            PNCP instável.
