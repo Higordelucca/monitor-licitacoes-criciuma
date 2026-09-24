@@ -5,6 +5,12 @@
   command = "npm run build"
   publish = ".next"
 
+# O cache do Turbopack guarda os valores de env lidos no build para saber quando
+# invalidar, e o scanner de segredos do Netlify acusa o JWT_SECRET ali. O cache
+# não é publicado; o resto do build continua sendo varrido.
+[build.environment]
+  SECRETS_SCAN_OMIT_PATHS = ".netlify/.next/cache/**,.next/cache/**"
+
 # Sem o plugin o Netlify sobe o .next como arquivo estático e toda rota dá 404.
 # A detecção automática não o ligou neste site, então fica declarado.
 [[plugins]]
