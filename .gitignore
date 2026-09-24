@@ -1,0 +1,24 @@
+# Dependências
+node_modules/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Build
+web/.next/
+web/out/
+web/.netlify/
+
+# Ambiente — nenhum segredo entra no repositório
+.env
+.env.*
+!.env.example
+
+# Sistema
+.DS_Store
+*.log
+
+# Documentação e anotações do projeto ficam fora do repositório público.
+# web/CLAUDE.md e web/AGENTS.md são recriados pelo próprio `next dev`.
+*.md
+*.pdf

@@ -1,0 +1,221 @@
+"""Escrita no Postgres. Todo upsert é idempotente: rodar a coleta duas vezes
+seguidas não cria linha repetida nem gera evento falso."""
+
+import os
+import pathlib
+
+import psycopg
+
+from incremental import CAMPOS_BUSCA
+
+
+def conectar():
+    url = os.environ.get("DATABASE_URL") or _do_env_local()
+    if not url:
+        raise SystemExit(
+            "DATABASE_URL não definida. Crie web/.env.local a partir de web/.env.example."
+        )
+    return psycopg.connect(url)
+
+
+def _do_env_local():
+    caminho = pathlib.Path(__file__).resolve().parents[1] / "web" / ".env.local"
+    if not caminho.exists():
+        return None
+    for linha in caminho.read_text().splitlines():
+        chave, _, valor = linha.partition("=")
+        if chave.strip() == "DATABASE_URL":
+            return valor.strip().strip("\"'")
+    return None
+
+
+def upsert_licitacao(cur, linha):
+    """Grava a licitação e devolve (id, mudou).
+
+    `mudou` distingue linha nova ou alterada de linha idêntica, para não gerar
+    evento de atualização quando nada mudou de fato.
+    """
+    cur.execute(
+        """
+        insert into licitacoes (
+            id_pncp, numero, ano, modalidade, objeto, secretaria, processo,
+            data_publicacao, data_abertura, data_homologacao,
+            valor_estimado, valor_homologado, status, url_pncp, atualizado_em
+        )
+        values (
+            %(id_pncp)s, %(numero)s, %(ano)s, %(modalidade)s, %(objeto)s,
+            %(secretaria)s, %(processo)s, %(data_publicacao)s, %(data_abertura)s,
+            %(data_homologacao)s, %(valor_estimado)s, %(valor_homologado)s,
+            %(status)s, %(url_pncp)s, now()
+        )
+        on conflict (id_pncp) do update set
+            numero           = excluded.numero,
+            ano              = excluded.ano,
+            modalidade       = excluded.modalidade,
+            objeto           = excluded.objeto,
+            secretaria       = excluded.secretaria,
+            processo         = excluded.processo,
+            data_publicacao  = excluded.data_publicacao,
+            data_abertura    = excluded.data_abertura,
+            data_homologacao = excluded.data_homologacao,
+            valor_estimado   = excluded.valor_estimado,
+            valor_homologado = excluded.valor_homologado,
+            status           = excluded.status,
+            url_pncp         = excluded.url_pncp,
+            atualizado_em    = now()
+        where licitacoes.status           is distinct from excluded.status
+           or licitacoes.objeto           is distinct from excluded.objeto
+           or licitacoes.data_abertura    is distinct from excluded.data_abertura
+           or licitacoes.data_homologacao is distinct from excluded.data_homologacao
+           or licitacoes.valor_estimado   is distinct from excluded.valor_estimado
+           or licitacoes.valor_homologado is distinct from excluded.valor_homologado
+        returning id, (xmax = 0) as inserida
+        """,
+        linha,
+    )
+    resultado = cur.fetchone()
+    if resultado:
+        return resultado[0], True
+    # O WHERE barrou a atualização: nada mudou. Busca o id existente.
+    cur.execute("select id from licitacoes where id_pncp = %s", (linha["id_pncp"],))
+    return cur.fetchone()[0], False
+
+
+def estado_compras(cur, cnpj_orgao):
+    """Estado de cada licitação do órgão já no banco, por id_pncp: último
+    evento, último movimento (publicação ou evento) e as colunas que vêm da
+    busca (incremental.CAMPOS_BUSCA), status incluído.
+
+    Uma consulta por órgão, não uma por compra: é o que a coleta incremental
+    usa para decidir o que refazer (incremental.plano) e o que regravar
+    (incremental.busca_mudou).
+    """
+    cur.execute(
+        """
+        select l.id_pncp, max(e.data), greatest(l.data_publicacao, max(e.data)),
+               l.modalidade, l.objeto, l.secretaria, l.data_publicacao,
+               l.data_abertura, l.status, l.url_pncp
+          from licitacoes l
+          left join eventos e on e.licitacao_id = l.id
+         where left(l.id_pncp, 14) = %s
+         group by l.id
+        """,
+        (cnpj_orgao,),
+    )
+    colunas = ("ultimo_evento", "movimento", *CAMPOS_BUSCA)
+    return {id_pncp: dict(zip(colunas, resto)) for id_pncp, *resto in cur.fetchall()}
+
+
+def atualizar_da_busca(cur, linha):
+    """Grava só o que vem da busca, sem tocar valores, homologação e o resto que
+    sai dos detalhes. É o caminho "leve" da coleta incremental: recalcula o
+    status pelo prazo (aberta → em análise) e pega revogação e suspensão.
+
+    Devolve True se algo mudou. Mudança de status dispara o trigger de aviso.
+    """
+    cur.execute(
+        """
+        update licitacoes set
+            modalidade      = %(modalidade)s,
+            objeto          = %(objeto)s,
+            secretaria      = %(secretaria)s,
+            data_publicacao = %(data_publicacao)s,
+            data_abertura   = %(data_abertura)s,
+            status          = %(status)s,
+            url_pncp        = %(url_pncp)s,
+            atualizado_em   = now()
+        where id_pncp = %(id_pncp)s
+          and (modalidade, objeto, secretaria, data_publicacao, data_abertura, status, url_pncp)
+              is distinct from
+              (%(modalidade)s, %(objeto)s, %(secretaria)s, %(data_publicacao)s::timestamptz,
+               %(data_abertura)s::timestamptz, %(status)s, %(url_pncp)s)
+        """,
+        linha,
+    )
+    return cur.rowcount > 0
+
+
+def inserir_documentos(cur, linhas):
+    """Devolve quantos documentos são novos."""
+    novos = 0
+    for linha in linhas:
+        if not linha["url"]:
+            continue
+        cur.execute(
+            """
+            insert into documentos (licitacao_id, tipo, titulo, url, tamanho_bytes, data_publicacao)
+            values (%(licitacao_id)s, %(tipo)s, %(titulo)s, %(url)s, %(tamanho_bytes)s, %(data_publicacao)s)
+            on conflict (licitacao_id, url) do nothing
+            """,
+            linha,
+        )
+        novos += cur.rowcount
+    return novos
+
+
+def inserir_eventos(cur, linhas):
+    novos = 0
+    for linha in linhas:
+        if linha["data"] is None:
+            continue
+        cur.execute(
+            """
+            insert into eventos (licitacao_id, tipo, descricao, data, fonte)
+            values (%(licitacao_id)s, %(tipo)s, %(descricao)s, %(data)s, %(fonte)s)
+            on conflict do nothing
+            """,
+            linha,
+        )
+        novos += cur.rowcount
+    return novos
+
+
+def upsert_empresa(cur, linha):
+    """Grava o esqueleto da empresa vindo do resultado do PNCP.
+
+    Não sobrescreve empresa já enriquecida pela API de CNPJ (fase 3): quem tem
+    `atualizado_em` preenchido passou por lá e tem dado melhor que este.
+    """
+    cur.execute(
+        """
+        insert into empresas (cnpj, razao_social, porte)
+        values (%(cnpj)s, %(razao_social)s, %(porte)s)
+        on conflict (cnpj) do update set
+            razao_social = excluded.razao_social,
+            porte        = coalesce(excluded.porte, empresas.porte)
+        where empresas.atualizado_em is null
+        """,
+        linha,
+    )
+
+
+def upsert_participante(cur, linha):
+    cur.execute(
+        """
+        insert into participantes (licitacao_id, cnpj, valor_proposta, situacao)
+        values (%(licitacao_id)s, %(cnpj)s, %(valor_proposta)s, %(situacao)s)
+        on conflict (licitacao_id, cnpj) do update set
+            valor_proposta = excluded.valor_proposta,
+            situacao       = excluded.situacao
+        """,
+        linha,
+    )
+
+
+def abrir_sync(cur, fonte):
+    cur.execute(
+        "insert into sync_log (fonte, status) values (%s, 'rodando') returning id",
+        (fonte,),
+    )
+    return cur.fetchone()[0]
+
+
+def fechar_sync(cur, sync_id, status, registros_novos=0, erro=None):
+    cur.execute(
+        """
+        update sync_log
+           set finalizado_em = now(), status = %s, registros_novos = %s, erro = %s
+         where id = %s
+        """,
+        (status, registros_novos, erro, sync_id),
+    )

@@ -1,0 +1,13 @@
+{
+  "name": "monitor-licitacoes-criciuma",
+  "private": true,
+  "type": "module",
+  "description": "Ferramental de banco. O site fica em web/, com dependências próprias.",
+  "scripts": {
+    "migrate": "node db/migrate.mjs",
+    "migrate:status": "node db/migrate.mjs --status"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
+}

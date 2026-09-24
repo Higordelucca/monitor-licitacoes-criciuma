@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+/* Tokens do Monitor de Licitações · Criciúma.
+   Valores provisórios (PDF pág. 3). Este é o único arquivo com cor:
+   trocar a paleta deve ser editar aqui, nunca varrer os componentes. */
+@theme {
+  /* Base */
+  --color-primaria: #1d5c74;
+  --color-primaria-hover: #123f50;
+  --color-primaria-clara: #e3eef2;
+  --color-texto: #1b1d1f;
+  --color-texto-2: #3a3d40;
+  --color-texto-suave: #5b5f63;
+  --color-fundo: #f4f3ef;
+  --color-superficie: #ffffff;
+  --color-borda: #dad8d0;
+  --color-borda-leve: #ecebe6;
+
+  /* Status: fundo e texto de cada pílula */
+  --color-aberta-fundo: #e4f0e6;
+  --color-aberta-texto: #245531;
+  --color-analise-fundo: #f6ebd3;
+  --color-analise-texto: #7a4f00;
+  --color-homologada-fundo: #e3eef2;
+  --color-homologada-texto: #1d5c74;
+  --color-suspensa-fundo: #f6e1e1;
+  --color-suspensa-texto: #8c2626;
+  --color-encerrada-fundo: #ecebe6;
+  --color-encerrada-texto: #3a3d40;
+
+  /* Tipografia. Mono alinha CNPJ, valor e nº de licitação. */
+  --font-sans: var(--fonte-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--fonte-mono), ui-monospace, monospace;
+
+  --text-titulo: 1.875rem; /* 30px — H1 */
+  --text-titulo-detalhe: 1.625rem; /* 26px — H1 da tela de detalhe */
+  --text-secao: 1.125rem; /* 18px — H2 */
+  --text-corpo: 0.9375rem; /* 15px */
+  --text-legenda: 0.8125rem; /* 13px */
+
+  /* Cantos */
+  --radius-card: 12px;
+  --radius-controle: 10px; /* botão e campo */
+  --radius-pilula: 999px;
+
+  /* Alturas fixas */
+  --spacing-header: 68px;
+  --spacing-botao: 44px;
+  --spacing-campo: 44px;
+  --spacing-linha: 50px; /* linha de tabela */
+  --spacing-topbar: 60px; /* mobile */
+  --spacing-tabbar: 72px; /* mobile */
+}
+
+body {
+  background: var(--color-fundo);
+  color: var(--color-texto);
+}
+
+/* Balão explicativo (components/Termo.tsx). Usa o atributo HTML `popover`, que
+   o navegador abre e fecha sozinho. Onde há CSS anchor positioning, o balão
+   aparece colado ao ⓘ; onde não há, o navegador o centraliza na tela, que
+   continua legível. */
+.balao {
+  width: min(20rem, calc(100vw - 2rem));
+}
+@supports (position-area: bottom) {
+  .balao {
+    inset: auto;
+    margin: 6px 0;
+    position-area: bottom span-right;
+    position-try-fallbacks: flip-block, flip-inline;
+  }
+}

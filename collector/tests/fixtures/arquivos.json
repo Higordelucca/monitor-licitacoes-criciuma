@@ -1,0 +1,16 @@
+[
+  {
+    "uri": "https://pncp.gov.br/pncp-api/v1/orgaos/82916818000113/compras/2022/1/arquivos/1",
+    "url": "https://pncp.gov.br/pncp-api/v1/orgaos/82916818000113/compras/2022/1/arquivos/1",
+    "statusAtivo": true,
+    "dataPublicacaoPncp": "2022-06-15T21:47:17",
+    "cnpj": "82916818000113",
+    "anoCompra": 2022,
+    "sequencialCompra": 1,
+    "sequencialDocumento": 1,
+    "titulo": "5f7696e2c8a9491a840402aa5df14e96",
+    "tipoDocumentoNome": "Aviso de Contratação Direta",
+    "tipoDocumentoDescricao": "Aviso de Contratação Direta",
+    "tipoDocumentoId": 1
+  }
+]
