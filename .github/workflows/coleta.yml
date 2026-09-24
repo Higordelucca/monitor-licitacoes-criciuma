@@ -5,7 +5,7 @@ name: Coleta PNCP
 #            abertas e as em análise ou suspensas que se mexeram nos últimos
 #            180 dias. ~1,5 min no Actions.
 #   completa todo dia de madrugada — confere todas pelo /historico, inclusive
-#            homologadas que ganharam ata ou contrato. 49 min em 2026-09-24, com o
+#            homologadas que ganharam ata ou contrato. ~7 min; 49 min com o
 #            PNCP instável.
 #
 # O repositório é público, então o Actions não tem cota de minutos. O limite
