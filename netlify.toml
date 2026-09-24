@@ -4,3 +4,8 @@
   base = "web"
   command = "npm run build"
   publish = ".next"
+
+# Sem o plugin o Netlify sobe o .next como arquivo estático e toda rota dá 404.
+# A detecção automática não o ligou neste site, então fica declarado.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
