@@ -34,7 +34,10 @@ ORGAOS = {
 # 'divulgada' devolve tudo que foi publicado; os outros dois são subconjuntos.
 STATUS_BUSCA = "divulgada"
 
-TAM_PAGINA = 100
+# A busca aceita 500 por página (testado em 2026-09-24). Menos páginas, menos
+# chances de cair numa das conexões que ela derruba: o Município passa de 8
+# requisições para 2.
+TAM_PAGINA = 500
 
 # pncp.gov.br derruba conexão de forma intermitente. Retry é requisito,
 # não refinamento.

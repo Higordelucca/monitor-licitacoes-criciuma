@@ -1,22 +1,24 @@
 name: Coleta PNCP
 
 # Coleta incremental (ver CLAUDE.md, "Atualização contínua"):
-#   rápida   de hora em hora, 7h–20h de Brasília, dias úteis — pega licitação
-#            nova e confere pelo /historico as abertas e as em análise ou
-#            suspensas que se mexeram nos últimos 180 dias.
-#   completa domingo de madrugada — confere todas pelo /historico, inclusive
-#            homologadas que ganharam ata ou contrato.
+#   rápida   a cada 30 min — pega licitação nova e confere pelo /historico as
+#            abertas e as em análise ou suspensas que se mexeram nos últimos
+#            180 dias. ~2,5 min no Actions.
+#   completa todo dia de madrugada — confere todas pelo /historico, inclusive
+#            homologadas que ganharam ata ou contrato. 49 min em 2026-09-24, com o
+#            PNCP instável.
 #
-# O horário comercial é por causa da cota de minutos do Actions em repositório
-# privado. Se o repositório virar público, dá para rodar a rápida a cada 30 min
-# o dia todo: trocar o primeiro cron por "*/30 * * * *".
+# O repositório é público, então o Actions não tem cota de minutos. O limite
+# de tempo de cada job existe para uma rodada presa não correr por horas.
 #
-# Cron do GitHub é em UTC: Brasília = UTC-3.
+# Cron do GitHub é em UTC: Brasília = UTC-3. A completa sai às 6h15 UTC, e
+# não às 6h00, para não disputar a vaga com a rápida desse horário: o grupo
+# de concorrência só guarda uma rodada na fila, e a mais nova toma o lugar.
 
 on:
   schedule:
-    - cron: "0 10-23 * * 1-5" # rápida: 7h às 20h de Brasília, seg–sex
-    - cron: "0 6 * * 0" # completa: 3h de Brasília, domingo
+    - cron: "*/30 * * * *" # rápida
+    - cron: "15 6 * * *" # completa: 3h15 de Brasília
   workflow_dispatch:
     inputs:
       modo:
@@ -44,7 +46,9 @@ jobs:
     # No push só rodam os testes.
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    # Rápida passa de 15 min só com o PNCP degradado; completa e tudo
+    # conferem as 1.013 compras.
+    timeout-minutes: ${{ (github.event.schedule == '15 6 * * *' || inputs.modo == 'completa' || inputs.modo == 'tudo') && 180 || 15 }}
     steps:
       - uses: actions/checkout@v5
 
@@ -59,15 +63,15 @@ jobs:
       - name: Coletar
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          # O cron de domingo é o da rodada completa; o resto é rápida.
-          MODO: ${{ inputs.modo || (github.event.schedule == '0 6 * * 0' && 'completa' || 'rapida') }}
+          # O cron das 6h15 é o da rodada completa; o resto é rápida.
+          MODO: ${{ inputs.modo || (github.event.schedule == '15 6 * * *' && 'completa' || 'rapida') }}
         run: |
           python collector/coleta.py --modo "$MODO" \
             ${{ inputs.limite && format('--limite {0}', inputs.limite) || '' }} \
             ${{ inputs.seco && '--seco' || '' }}
 
   testes:
-    # Só quando o código do collector muda, não a cada coleta: poupa minutos.
+    # Só quando o código do collector muda, não a cada coleta.
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:

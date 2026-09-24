@@ -1,12 +1,10 @@
 """Orquestração da coleta incremental com uma API falsa que conta chamadas.
 Roda em modo seco: não toca banco nem rede."""
 
-import contextlib
 import pathlib
 import sys
 from datetime import datetime, timezone
 
-import psycopg
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
@@ -87,14 +85,14 @@ def test_leve_sem_mudanca_nao_vai_ao_banco(monkeypatch):
     # rápida passava ~9 min só atualizando linhas que não tinham mudado.
     gravacoes = Gravacoes(monkeypatch)
     gravado = coleta.m.licitacao(ITEM, tem_resultado=True)
-    assert coleta.atualizar_leve(None, ITEM, dict(gravado, status="homologada"), False) == 0
+    assert coleta.atualizar_leve(BancoFalso(), ITEM, dict(gravado, status="homologada"), False) == 0
     assert gravacoes.linhas == []
 
 
 def test_leve_com_mudanca_grava(monkeypatch):
     gravacoes = Gravacoes(monkeypatch)
     gravado = dict(coleta.m.licitacao(ITEM, tem_resultado=True), objeto="Objeto antigo")
-    assert coleta.atualizar_leve(None, ITEM, gravado, False) == 1
+    assert coleta.atualizar_leve(BancoFalso(), ITEM, gravado, False) == 1
     assert [l["objeto"] for l in gravacoes.linhas] == ["Objeto de teste"]
 
 
@@ -108,45 +106,49 @@ def test_compra_nova_entra_completa():
 # --- falha num órgão -------------------------------------------------------
 
 
-class ConexaoFalsa:
-    def __init__(self, rollback_quebra=False):
-        self.rollback_quebra = rollback_quebra
-        self.fechada = False
-        self.commits = 0
-
-    def rollback(self):
-        if self.rollback_quebra:
-            raise psycopg.InternalError("received 2 results from command 'ROLLBACK'")
+class BancoFalso:
+    def __init__(self):
+        self.passos = []
 
     def cursor(self):
-        return contextlib.nullcontext(self)
+        return self
 
     def commit(self):
-        self.commits += 1
+        self.passos.append("commit")
 
-    def close(self):
-        self.fechada = True
-
-
-@pytest.fixture
-def sync_fechado(monkeypatch):
-    registros = []
-    monkeypatch.setattr(coleta.db, "fechar_sync", lambda cur, *args: registros.append((cur, args)))
-    return registros
+    def rollback(self):
+        self.passos.append("rollback")
 
 
-def test_falha_fica_no_sync_log(sync_fechado):
-    conexao = ConexaoFalsa()
-    assert coleta.registrar_falha(conexao, 7, 3, RuntimeError("PNCP fora")) is conexao
-    assert sync_fechado == [(conexao, (7, "erro", 3, "PNCP fora"))]
-    assert conexao.commits == 1
+def test_falha_desfaz_a_compra_e_fica_no_sync_log(monkeypatch):
+    banco = BancoFalso()
+    monkeypatch.setattr(
+        coleta.db, "fechar_sync", lambda cur, *args: banco.passos.append(("fechar_sync", args))
+    )
+    coleta.registrar_falha(banco, 7, 3, RuntimeError("PNCP fora"))
+    assert banco.passos == ["rollback", ("fechar_sync", (7, "erro", 3, "PNCP fora")), "commit"]
 
 
-def test_conexao_perdida_e_refeita_para_registrar_a_falha(monkeypatch, sync_fechado):
-    # Em 2026-09-23 o ROLLBACK falhou depois de ~8 min sem consulta, esperando
-    # o PNCP, e derrubou a coleta inteira em vez de seguir para o próximo órgão.
-    velha, nova = ConexaoFalsa(rollback_quebra=True), ConexaoFalsa()
-    monkeypatch.setattr(coleta.db, "conectar", lambda: nova)
-    assert coleta.registrar_falha(velha, 7, 0, RuntimeError("timed out")) is nova
-    assert velha.fechada
-    assert sync_fechado == [(nova, (7, "erro", 0, "timed out"))]
+class PncpForaDoAr:
+    def __init__(self):
+        self.orgaos = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+    def buscar_compras(self, orgao_id):
+        self.orgaos.append(orgao_id)
+        raise coleta.PncpFora("502 Bad Gateway")
+
+
+def test_pncp_fora_do_ar_interrompe_a_rodada(monkeypatch):
+    # Em 2026-09-24 o PNCP passou a madrugada devolvendo timeout e 502. Cada
+    # órgão esgotava as tentativas de novo, e a rodada queimou 48 min.
+    api = PncpForaDoAr()
+    monkeypatch.setattr(coleta, "Pncp", lambda: api)
+    monkeypatch.setattr(sys, "argv", ["coleta.py", "--seco"])
+    assert coleta.main() == 1
+    assert len(api.orgaos) == 1

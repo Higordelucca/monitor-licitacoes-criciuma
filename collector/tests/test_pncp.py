@@ -49,6 +49,15 @@ def test_espera_da_busca_cresce_mas_tem_teto(sem_espera):
 
 def test_detalhe_desiste_depois_das_tentativas_normais():
     api, chamadas = cliente_que_falha(99)
-    with pytest.raises(httpx.ReadError):
+    with pytest.raises(pncp.PncpFora):
         api.historico("82916818000113", 2026, 194)
     assert len(chamadas) == pncp.TENTATIVAS
+
+
+def test_erro_4xx_nao_e_pncp_fora_do_ar():
+    # 4xx é pedido errado nosso: tentar de novo não resolve, e não é motivo
+    # para interromper a rodada.
+    api = pncp.Pncp()
+    api._c = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(400)))
+    with pytest.raises(httpx.HTTPStatusError):
+        api.historico("82916818000113", 2026, 194)

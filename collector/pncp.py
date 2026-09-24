@@ -20,6 +20,14 @@ from config import (
 log = logging.getLogger(__name__)
 
 
+class PncpFora(Exception):
+    """O PNCP não respondeu nem depois de todas as tentativas.
+
+    Não é problema de uma compra: é o portal fora do ar ou degradado. Quem
+    coleta deve interromper a rodada em vez de insistir nos órgãos seguintes.
+    """
+
+
 class Pncp:
     def __init__(self):
         self._c = httpx.Client(
@@ -50,7 +58,7 @@ class Pncp:
                 if isinstance(erro, httpx.HTTPStatusError) and 400 <= erro.response.status_code < 500:
                     raise
                 if tentativa == tentativas:
-                    raise
+                    raise PncpFora(f"{url}: {erro}") from erro
                 log.warning("tentativa %d/%d falhou em %s: %s", tentativa, tentativas, url, erro)
                 time.sleep(espera)
                 espera = min(espera * 2, ESPERA_MAXIMA)

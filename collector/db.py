@@ -3,8 +3,10 @@ seguidas não cria linha repetida nem gera evento falso."""
 
 import os
 import pathlib
+import time
 
 import psycopg
+from psycopg.pq import TransactionStatus
 
 from incremental import CAMPOS_BUSCA
 
@@ -16,6 +18,50 @@ def conectar():
             "DATABASE_URL não definida. Crie web/.env.local a partir de web/.env.example."
         )
     return psycopg.connect(url)
+
+
+class Banco:
+    """Conexão com o Neon que se refaz quando ficou parada tempo demais.
+
+    O Neon fecha conexão ociosa. Em 2026-09-24 a rodada completa passou ~35
+    min conferindo o /historico sem tocar o banco (o caminho leve compara em
+    memória) e, na hora de gravar o sync_log, a conexão estava morta. Por isso
+    quem vai falar com o banco pede o cursor na hora, e a conexão é refeita
+    antes se o último pedido foi há mais de OCIOSA segundos — só entre
+    transações, para nunca descartar escrita pendente.
+    """
+
+    OCIOSA = 240
+
+    def __init__(self, conectar=conectar, relogio=time.monotonic):
+        self._conectar = conectar
+        self._relogio = relogio
+        self._c = conectar()
+        self._uso = relogio()
+
+    def cursor(self):
+        parada = self._relogio() - self._uso > self.OCIOSA
+        if parada and self._c.info.transaction_status == TransactionStatus.IDLE:
+            self._c.close()
+            self._c = self._conectar()
+        self._uso = self._relogio()
+        return self._c.cursor()
+
+    def commit(self):
+        # Não conta como uso: sem transação aberta, o commit nem sai da máquina.
+        self._c.commit()
+
+    def rollback(self):
+        """Desfaz a transação; se a conexão já caiu, abre outra."""
+        try:
+            self._c.rollback()
+        except psycopg.Error:
+            self._c.close()
+            self._c = self._conectar()
+            self._uso = self._relogio()
+
+    def close(self):
+        self._c.close()
 
 
 def _do_env_local():
