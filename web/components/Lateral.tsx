@@ -97,9 +97,10 @@ export function UltimasAtualizacoes({ eventos }: { eventos: Evento[] }) {
   );
 }
 
-/* Uma linha de sync_log por órgão coletado. Para quem lê, o que importa é se
-   o PNCP como um todo está em dia, então as linhas viram um estado só. */
-function estadoPncp(fontes: Fonte[]) {
+/* Uma linha de sync_log por órgão coletado, por lista de sanções e para o
+   cadastro de CNPJ. Para quem lê, o que importa é se cada fonte como um todo
+   está em dia, então as linhas de cada uma viram um estado só. */
+function estadoFonte(fontes: Fonte[]) {
   if (fontes.length === 0) return { texto: "Nunca coletado", cor: "bg-encerrada-texto" };
   if (fontes.some((f) => f.status === "erro")) return { texto: "Falha", cor: "bg-suspensa-texto" };
   if (fontes.some((f) => f.status === "rodando")) return { texto: "Coletando", cor: "bg-analise-texto" };
@@ -107,29 +108,26 @@ function estadoPncp(fontes: Fonte[]) {
   return { texto: "OK", cor: "bg-aberta-texto" };
 }
 
-export function FontesDados({ fontes }: { fontes: Fonte[] }) {
-  const pncp = estadoPncp(fontes);
+function ultimaColeta(fontes: Fonte[]) {
   const ultima = fontes
     .map((f) => f.finalizado_em)
     .filter((d): d is Date => d !== null)
     .sort((a, b) => b.getTime() - a.getTime())[0];
+  return ultima ? `última coleta ${haQuantoTempo(ultima)}` : undefined;
+}
 
+export function FontesDados({ fontes }: { fontes: Fonte[] }) {
+  const grupo = (prefixo: string) => fontes.filter((f) => f.fonte.startsWith(prefixo));
   const linhas = [
-    {
-      nome: <>PNCP <Termo chave="pncp" /></>,
-      estado: pncp,
-      detalhe: ultima ? `última coleta ${haQuantoTempo(ultima)}` : undefined,
-      titulo: fontes.map((f) => `${f.fonte}: ${f.status}`).join("\n"),
-    },
-    {
-      nome: "Portal da Transparência",
-      estado: { texto: "Ainda não coletado", cor: "bg-encerrada-texto" },
-    },
-    {
-      nome: "Dados de CNPJ",
-      estado: { texto: "Ainda não coletado", cor: "bg-encerrada-texto" },
-    },
-  ];
+    { nome: <>PNCP <Termo chave="pncp" /></>, fontes: grupo("PNCP") },
+    { nome: <>Portal da Transparência <Termo chave="sancao" /></>, fontes: grupo("Transparência") },
+    { nome: <>Dados de CNPJ <Termo chave="situacao_cadastral" /></>, fontes: grupo("CNPJ") },
+  ].map((l) => ({
+    nome: l.nome,
+    estado: estadoFonte(l.fontes),
+    detalhe: ultimaColeta(l.fontes),
+    titulo: l.fontes.map((f) => `${f.fonte}: ${f.status}`).join("\n"),
+  }));
 
   return (
     <Bloco titulo="Fontes de dados">

@@ -128,3 +128,16 @@ export function tituloDocumento(titulo: string | null | undefined, tipo: string 
   if (t && !/^[0-9a-f]{32}$/i.test(t)) return t;
   return tipo?.trim() || "Documento";
 }
+
+/** Coluna `date` do Postgres ("2017-05-26") para Date. Meio-dia de Brasília
+    em vez da meia-noite do fuso do servidor, que no Netlify (UTC) é 21h do
+    dia anterior em Brasília — toda data sairia um dia antes. Registrado como
+    parser do pg em lib/db.ts. */
+export function lerDia(texto: string): Date {
+  return new Date(`${texto}T12:00:00-03:00`);
+}
+
+/** Dia do calendário em Brasília, "aaaa-mm-dd", para comparar datas. */
+export function diaEmBrasilia(d: Date): string {
+  return d.toLocaleDateString("en-CA", { timeZone: FUSO });
+}

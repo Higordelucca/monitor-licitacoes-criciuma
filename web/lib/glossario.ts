@@ -10,7 +10,7 @@
    regra usada lá, para ninguém ler "homologada" com mais certeza do que o
    dado permite. */
 
-export type Grupo = "status" | "modalidade" | "etapa" | "campo";
+export type Grupo = "status" | "modalidade" | "etapa" | "empresa" | "campo";
 
 export type Entrada = {
   termo: string;
@@ -46,6 +46,14 @@ export const GRUPOS: { id: Grupo; titulo: string; intro: string }[] = [
     intro:
       "Uma licitação segue uma ordem definida em lei. Nem toda contratação passa por todas " +
       "as etapas: a contratação direta, por exemplo, não tem disputa entre empresas.",
+  },
+  {
+    id: "empresa",
+    titulo: "Cadastro e sanções da empresa",
+    intro:
+      "A ficha de cada empresa junta o cadastro da Receita Federal e as listas de sanções " +
+      "do Portal da Transparência. O monitor confere as listas uma vez por dia e mostra a " +
+      "data da última conferência.",
   },
   {
     id: "campo",
@@ -301,7 +309,8 @@ export const GLOSSARIO = {
         "fatura acima disso e até R$ 4,8 milhões.",
       "Nas licitações, ME e EPP têm tratamento diferenciado: em caso de empate, por " +
         "exemplo, têm preferência na contratação.",
-      "O porte vem do PNCP, informado no resultado da licitação.",
+      "O porte vem do cadastro da Receita Federal. Enquanto a empresa não foi consultada " +
+        "lá, vale o informado no resultado da licitação, no PNCP.",
     ],
     baseLegal: "Lei Complementar 123/2006, arts. 3º e 44",
   },
@@ -327,6 +336,90 @@ export const GLOSSARIO = {
         "em primeiro lugar. Na maioria desses casos o PNCP não informa valor, e a tela " +
         "mostra “—”.",
     ],
+  },
+
+  /* ── Cadastro e sanções ─────────────────────────────────────────────── */
+  situacao_cadastral: {
+    termo: "Situação cadastral",
+    grupo: "empresa",
+    curto:
+      "Situação do CNPJ na Receita Federal. \"Ativa\" é a regular; suspensa, inapta, baixada ou nula indicam problema ou empresa encerrada.",
+    longo: [
+      "É a situação do CNPJ no cadastro da Receita Federal, consultada pelo monitor na " +
+        "BrasilAPI e renovada a cada 30 dias.",
+      "\"Ativa\" é a situação regular. \"Baixada\" quer dizer empresa encerrada; " +
+        "\"inapta\" e \"suspensa\" indicam pendência com a Receita; \"nula\" é um cadastro " +
+        "anulado.",
+    ],
+  },
+  sancao: {
+    termo: "Sanção registrada",
+    grupo: "empresa",
+    curto:
+      "A empresa aparece numa lista oficial de punidos (CEIS, CNEP ou CEPIM). Isso não quer dizer, por si só, que ela não possa contratar com Criciúma.",
+    longo: [
+      "O Portal da Transparência do governo federal publica todo dia três listas de " +
+        "empresas e entidades punidas: o CEIS, o CNEP e o CEPIM. O monitor cruza essas " +
+        "listas com as empresas que aparecem nas licitações de Criciúma.",
+      "Estar numa lista não significa automaticamente que a empresa está proibida de " +
+        "contratar com a Prefeitura. Depende do tipo de sanção e de quem a aplicou — é o " +
+        "que a abrangência informa.",
+    ],
+  },
+  ceis: {
+    termo: "CEIS",
+    grupo: "empresa",
+    curto:
+      "Cadastro Nacional de Empresas Inidôneas e Suspensas: quem foi punido com impedimento, suspensão ou declaração de inidoneidade.",
+    longo: [
+      "Reúne as empresas e pessoas punidas por órgãos públicos de todo o país com sanções " +
+        "que restringem a participação em licitações: impedimento de licitar e contratar, " +
+        "suspensão e declaração de inidoneidade.",
+      "Cada órgão que aplica a sanção é obrigado a informá-la ao cadastro. Por isso o CEIS " +
+        "traz punições aplicadas por prefeituras, estados, a União e empresas estatais.",
+    ],
+    baseLegal: "Lei 12.846/2013, art. 23; Lei 14.133/2021, art. 161",
+  },
+  cnep: {
+    termo: "CNEP",
+    grupo: "empresa",
+    curto:
+      "Cadastro Nacional de Empresas Punidas: sanções da Lei Anticorrupção, como multa por ato lesivo à administração pública.",
+    longo: [
+      "Reúne as empresas punidas com base na Lei Anticorrupção, que responsabiliza a " +
+        "empresa por atos contra a administração pública, como fraude em licitação.",
+      "As sanções mais comuns são multa e publicação extraordinária da decisão. Nem toda " +
+        "sanção do CNEP impede a empresa de licitar.",
+    ],
+    baseLegal: "Lei 12.846/2013, art. 22",
+  },
+  cepim: {
+    termo: "CEPIM",
+    grupo: "empresa",
+    curto:
+      "Cadastro de Entidades Privadas sem Fins Lucrativos Impedidas: entidades que não podem receber recursos federais por problema em convênio.",
+    longo: [
+      "Lista entidades sem fins lucrativos, como associações e fundações privadas, " +
+        "impedidas de firmar convênios com o governo federal — em geral por não terem " +
+        "prestado contas de um convênio anterior.",
+      "Raramente atinge empresas: quem disputa licitação costuma ter fins lucrativos.",
+    ],
+  },
+  abrangencia: {
+    termo: "Abrangência da sanção",
+    grupo: "empresa",
+    curto:
+      "Onde a sanção vale. Um impedimento aplicado por outra prefeitura vale só lá; a declaração de inidoneidade vale em todo o país.",
+    longo: [
+      "Pela Lei 14.133, o impedimento de licitar e contratar vale apenas no ente que o " +
+        "aplicou — um impedimento dado por outra prefeitura não impede a empresa de " +
+        "contratar com Criciúma. Dura no máximo três anos.",
+      "A declaração de inidoneidade vale para a administração pública de todos os entes, " +
+        "de três a seis anos.",
+      "Sanções aplicadas pela lei antiga (Lei 8.666) seguem regras próprias. Quando o " +
+        "órgão não informou a abrangência, o monitor diz isso em vez de supor.",
+    ],
+    baseLegal: "Lei 14.133/2021, art. 156, §§ 4º e 5º",
   },
 } satisfies Record<string, Entrada>;
 

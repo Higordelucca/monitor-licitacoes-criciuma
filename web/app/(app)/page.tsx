@@ -82,11 +82,10 @@ export default async function Painel(props: PageProps<"/">) {
           order by data desc
           limit 6`,
       ),
-      // A última rodada de cada órgão; rodadas antigas não dizem nada do agora.
+      // A última rodada de cada fonte; rodadas antigas não dizem nada do agora.
       consultar<Fonte>(
         `select distinct on (fonte) fonte, status, iniciado_em, finalizado_em
            from sync_log
-          where fonte like 'PNCP%'
           order by fonte, iniciado_em desc`,
       ),
     ]);

@@ -74,7 +74,14 @@ export default async function Detalhe(props: PageProps<"/licitacoes/[id]">) {
 
   const [participantes, documentos, historico, [{ total_historico }], [{ seguindo }]] = await Promise.all([
     consultar<Participante>(
-      `select p.cnpj, e.razao_social, e.porte, p.valor_proposta, p.situacao
+      // Mesma regra de lib/sancoes.ts (vigente): sem data final ou ainda por vir.
+      `select p.cnpj, e.razao_social, e.porte, p.valor_proposta, p.situacao,
+              exists (
+                select 1 from sancoes s
+                 where s.cnpj = p.cnpj
+                   and (s.data_fim is null
+                        or s.data_fim >= (now() at time zone 'America/Sao_Paulo')::date)
+              ) as sancionada
          from participantes p
          join empresas e on e.cnpj = p.cnpj
         where p.licitacao_id = $1

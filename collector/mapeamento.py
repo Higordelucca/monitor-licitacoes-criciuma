@@ -179,3 +179,95 @@ def participante(resultado, licitacao_id):
         "situacao": "vencedora" if resultado.get("ordemClassificacaoSrp") == 1 else "habilitada",
     }
     return empresa, vinculo
+
+
+# --- enriquecimento (fase 3) ------------------------------------------------
+
+
+def dia(valor, formato="%Y-%m-%d"):
+    """Data sem hora. A BrasilAPI manda ISO; o Portal da Transparência,
+    dd/mm/aaaa. Vazio ou fora do formato vira None."""
+    if not valor:
+        return None
+    try:
+        return datetime.strptime(valor.strip(), formato).date()
+    except ValueError:
+        return None
+
+
+def empresa_brasilapi(dados):
+    """Resposta de /api/cnpj/v1/{cnpj} -> linha de `empresas`."""
+    cnae = " · ".join(
+        str(p) for p in (dados.get("cnae_fiscal"), dados.get("cnae_fiscal_descricao")) if p
+    )
+    capital = dados.get("capital_social")
+    return {
+        "cnpj": digitos(dados["cnpj"]),
+        "razao_social": dados.get("razao_social") or "(sem razão social)",
+        "nome_fantasia": dados.get("nome_fantasia") or None,
+        "porte": dados.get("porte") or None,
+        "situacao_cadastral": dados.get("descricao_situacao_cadastral") or None,
+        "data_abertura": dia(dados.get("data_inicio_atividade")),
+        "cnae_principal": cnae or None,
+        "municipio": dados.get("municipio") or None,
+        "uf": dados.get("uf") or None,
+        "capital_social": Decimal(str(capital)) if capital is not None else None,
+    }
+
+
+def socios_brasilapi(dados):
+    """Quadro de sócios (`qsa`) -> linhas de `socios`.
+
+    O CPF do sócio vem mascarado pela Receita e fica de fora: é dado pessoal
+    e a tela não o usa.
+    """
+    cnpj = digitos(dados["cnpj"])
+    return [
+        {
+            "cnpj": cnpj,
+            "nome": s["nome_socio"],
+            "qualificacao": s.get("qualificacao_socio") or None,
+            "data_entrada": dia(s.get("data_entrada_sociedade")),
+        }
+        for s in dados.get("qsa") or []
+        if s.get("nome_socio")
+    ]
+
+
+def sancao(cadastro, linha):
+    """Linha do CSV do CEIS, do CNEP ou do CEPIM -> linha de `sancoes`.
+
+    Devolve None para pessoa física, pelo mesmo motivo do participante: CPF
+    não cabe em `empresas.cnpj`. "Sem Informação" na abrangência vira nulo.
+    """
+    if cadastro == "CEPIM":
+        cnpj = digitos(linha["CNPJ ENTIDADE"])
+        convenio = linha["NÚMERO CONVÊNIO"].strip()
+        return {
+            "cnpj": cnpj,
+            "cadastro": cadastro,
+            "chave": f"{cnpj}-{convenio}",
+            "categoria": None,
+            "descricao": linha["MOTIVO DO IMPEDIMENTO"].strip() or None,
+            "orgao_sancionador": linha["ÓRGÃO CONCEDENTE"].strip() or None,
+            "abrangencia": None,
+            "processo": convenio or None,
+            "data_inicio": None,
+            "data_fim": None,
+        }
+    cnpj = digitos(linha["CPF OU CNPJ DO SANCIONADO"])
+    if linha["TIPO DE PESSOA"] != "J" or len(cnpj) != 14:
+        return None
+    abrangencia = linha["ABRAGÊNCIA DA SANÇÃO"].strip()
+    return {
+        "cnpj": cnpj,
+        "cadastro": cadastro,
+        "chave": linha["CÓDIGO DA SANÇÃO"].strip(),
+        "categoria": linha["CATEGORIA DA SANÇÃO"].strip() or None,
+        "descricao": linha["FUNDAMENTAÇÃO LEGAL"].strip() or None,
+        "orgao_sancionador": linha["ÓRGÃO SANCIONADOR"].strip() or None,
+        "abrangencia": None if abrangencia in ("", "Sem Informação") else abrangencia,
+        "processo": linha["NÚMERO DO PROCESSO"].strip() or None,
+        "data_inicio": dia(linha["DATA INÍCIO SANÇÃO"], "%d/%m/%Y"),
+        "data_fim": dia(linha["DATA FINAL SANÇÃO"], "%d/%m/%Y"),
+    }

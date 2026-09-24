@@ -265,3 +265,93 @@ def fechar_sync(cur, sync_id, status, registros_novos=0, erro=None):
         """,
         (status, registros_novos, erro, sync_id),
     )
+
+
+# --- enriquecimento (fase 3) ------------------------------------------------
+
+
+def cnpjs_conhecidos(cur):
+    cur.execute("select cnpj from empresas")
+    return {cnpj for (cnpj,) in cur.fetchall()}
+
+
+def empresas_para_enriquecer(cur, limite=None):
+    """CNPJs sem cadastro da Receita ou com cadastro de mais de 30 dias. As
+    nunca consultadas vêm primeiro."""
+    cur.execute(
+        """
+        select cnpj from empresas
+         where atualizado_em is null or atualizado_em < now() - interval '30 days'
+         order by atualizado_em nulls first, cnpj
+         limit %s
+        """,
+        (limite,),
+    )
+    return [cnpj for (cnpj,) in cur.fetchall()]
+
+
+def gravar_empresa(cur, empresa, socios):
+    """Cadastro da Receita por cima do esqueleto vindo do PNCP, e o quadro de
+    sócios refeito do zero — sócio que saiu da sociedade sai da tabela."""
+    cur.execute(
+        """
+        update empresas set
+            razao_social       = %(razao_social)s,
+            nome_fantasia      = %(nome_fantasia)s,
+            porte              = coalesce(%(porte)s, porte),
+            situacao_cadastral = %(situacao_cadastral)s,
+            data_abertura      = %(data_abertura)s,
+            cnae_principal     = %(cnae_principal)s,
+            municipio          = %(municipio)s,
+            uf                 = %(uf)s,
+            capital_social     = %(capital_social)s,
+            atualizado_em      = now()
+        where cnpj = %(cnpj)s
+        """,
+        empresa,
+    )
+    cur.execute("delete from socios where cnpj = %s", (empresa["cnpj"],))
+    for socio in socios:
+        cur.execute(
+            """
+            insert into socios (cnpj, nome, qualificacao, data_entrada)
+            values (%(cnpj)s, %(nome)s, %(qualificacao)s, %(data_entrada)s)
+            on conflict do nothing
+            """,
+            socio,
+        )
+
+
+def sincronizar_sancoes(cur, cadastro, sancoes):
+    """Deixa o cadastro igual à lista do dia: grava as que estão nela e apaga
+    as que saíram. Devolve (novas, saídas)."""
+    novas = 0
+    for s in sancoes:
+        cur.execute(
+            """
+            insert into sancoes (cnpj, cadastro, chave, categoria, descricao,
+                                 orgao_sancionador, abrangencia, processo,
+                                 data_inicio, data_fim, verificado_em)
+            values (%(cnpj)s, %(cadastro)s, %(chave)s, %(categoria)s, %(descricao)s,
+                    %(orgao_sancionador)s, %(abrangencia)s, %(processo)s,
+                    %(data_inicio)s, %(data_fim)s, now())
+            on conflict (cadastro, chave) do update set
+                cnpj              = excluded.cnpj,
+                categoria         = excluded.categoria,
+                descricao         = excluded.descricao,
+                orgao_sancionador = excluded.orgao_sancionador,
+                abrangencia       = excluded.abrangencia,
+                processo          = excluded.processo,
+                data_inicio       = excluded.data_inicio,
+                data_fim          = excluded.data_fim,
+                verificado_em     = now()
+            returning (xmax = 0)
+            """,
+            s,
+        )
+        novas += cur.fetchone()[0]
+    cur.execute(
+        "delete from sancoes where cadastro = %s and not (chave = any(%s))",
+        (cadastro, [s["chave"] for s in sancoes]),
+    )
+    return novas, cur.rowcount

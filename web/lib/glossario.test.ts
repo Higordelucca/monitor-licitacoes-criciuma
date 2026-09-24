@@ -31,6 +31,14 @@ describe("glossário", () => {
     }
   });
 
+  it("toda lista de sanções do CHECK tem explicação, e a abrangência também", () => {
+    // Sanção sem explicação de abrangência leva a ler impedimento em outra
+    // cidade como proibição de contratar com Criciúma.
+    for (const chave of ["ceis", "cnep", "cepim", "abrangencia", "sancao"]) {
+      expect(GLOSSARIO, chave).toHaveProperty(chave);
+    }
+  });
+
   it("modalidade desconhecida não inventa explicação", () => {
     expect(chaveModalidade("Diálogo Competitivo Interplanetário")).toBeUndefined();
     expect(chaveModalidade(null)).toBeUndefined();

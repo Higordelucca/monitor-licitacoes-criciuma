@@ -2,10 +2,12 @@
 Nenhum toca rede: o PNCP cai com frequência e um teste que depende dele
 não serve para dizer se o nosso código está certo."""
 
+import csv
+import io
 import json
 import pathlib
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -209,3 +211,114 @@ def test_cnpj_com_mascara_e_normalizado():
     empresa, vinculo = m.participante(pj, 1)
     assert empresa["cnpj"] == "22627453000185"
     assert vinculo["situacao"] == "habilitada"
+
+
+# --- enriquecimento: BrasilAPI --------------------------------------------
+# Resposta real de 2026-09-24; nome, telefone e endereço do sócio trocados por
+# marcador, porque o repositório é público.
+
+
+@pytest.fixture
+def cnpj_api():
+    return carregar("brasilapi_cnpj.json")
+
+
+def test_empresa_da_brasilapi(cnpj_api):
+    e = m.empresa_brasilapi(cnpj_api)
+    assert e["cnpj"] == "27830943000106"
+    assert e["razao_social"] == "LAURETH IMPORTACAO E SERVICOS LTDA"
+    assert e["porte"] == "MICRO EMPRESA"
+    assert e["situacao_cadastral"] == "ATIVA"
+    assert e["data_abertura"] == date(2017, 5, 26)
+    assert e["municipio"] == "CRICIUMA"
+    assert e["uf"] == "SC"
+    assert e["capital_social"] == Decimal("100000")
+
+
+def test_cnae_leva_codigo_e_descricao(cnpj_api):
+    # Só o código (4751201) não diz nada a quem lê a Ficha.
+    assert m.empresa_brasilapi(cnpj_api)["cnae_principal"] == (
+        "4751201 · Comércio varejista especializado de equipamentos e "
+        "suprimentos de informática"
+    )
+
+
+def test_nome_fantasia_vazio_vira_nulo(cnpj_api):
+    # A Receita manda "" quando não há nome fantasia; "" na tela é um buraco.
+    assert m.empresa_brasilapi(cnpj_api)["nome_fantasia"] is None
+
+
+def test_socios_da_brasilapi(cnpj_api):
+    assert m.socios_brasilapi(cnpj_api) == [
+        {
+            "cnpj": "27830943000106",
+            "nome": "FULANO DE TAL",
+            "qualificacao": "Sócio-Administrador",
+            "data_entrada": date(2021, 9, 1),
+        }
+    ]
+
+
+def test_socio_nao_guarda_cpf(cnpj_api):
+    # O CPF vem mascarado e é dado pessoal que a tela não usa.
+    assert all("cpf" not in chave for s in m.socios_brasilapi(cnpj_api) for chave in s)
+
+
+def test_empresa_sem_qsa_nao_tem_socios(cnpj_api):
+    cnpj_api["qsa"] = None
+    assert m.socios_brasilapi(cnpj_api) == []
+
+
+# --- enriquecimento: sanções do Portal da Transparência --------------------
+# Linhas reais dos arquivos de 2026-09-23 (CSV em latin-1, separado por ;).
+
+
+def lista(nome):
+    return list(csv.DictReader(
+        io.StringIO((FIXTURES / nome).read_text(encoding="latin1")), delimiter=";"
+    ))
+
+
+def test_sancao_do_ceis():
+    s = m.sancao("CEIS", lista("ceis.csv")[0])
+    assert s["cnpj"] == "04394957000110"
+    assert s["cadastro"] == "CEIS"
+    assert s["chave"] == "388108"
+    assert s["data_fim"] == date(2027, 5, 15)
+    assert s["categoria"]
+    assert s["orgao_sancionador"]
+
+
+def test_sancao_sem_data_final_fica_sem_fim():
+    s = m.sancao("CEIS", lista("ceis.csv")[1])
+    assert s["data_fim"] is None
+
+
+def test_abrangencia_sem_informacao_vira_nula():
+    # Um terço do CEIS vem "Sem Informação". Nulo deixa a tela dizer "não
+    # informada" em vez de repetir o jargão do arquivo.
+    linha = dict(lista("ceis.csv")[0], **{"ABRAGÊNCIA DA SANÇÃO": "Sem Informação"})
+    assert m.sancao("CEIS", linha)["abrangencia"] is None
+
+
+def test_sancao_de_pessoa_fisica_e_descartada():
+    # Mesmo motivo do participante PF: CPF não cabe em empresas.cnpj.
+    linha = dict(lista("ceis.csv")[0], **{
+        "TIPO DE PESSOA": "F", "CPF OU CNPJ DO SANCIONADO": "48342491749",
+    })
+    assert m.sancao("CEIS", linha) is None
+
+
+def test_sancao_do_cnep():
+    s = m.sancao("CNEP", lista("cnep.csv")[0])
+    assert (s["cnpj"], s["cadastro"], s["chave"]) == ("06217047000198", "CNEP", "277922")
+
+
+def test_cepim_usa_cnpj_e_convenio_como_chave():
+    # O CEPIM não tem código de sanção nem datas; o impedimento é por convênio.
+    s = m.sancao("CEPIM", lista("cepim.csv")[0])
+    assert s["cnpj"] == "04764289000176"
+    assert s["chave"] == "04764289000176-576259"
+    assert s["descricao"] == "NAO APRESENTACAO DE DOCUMENTACAO COMPLEMENTAR"
+    assert s["orgao_sancionador"].startswith("Ministério da Cultura")
+    assert s["data_inicio"] is None and s["data_fim"] is None

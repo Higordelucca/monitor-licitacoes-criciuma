@@ -12,6 +12,8 @@ export type Participante = {
   porte: string | null;
   valor_proposta: string | null;
   situacao: "vencedora" | "habilitada" | "em_analise" | "inabilitada" | null;
+  /** Tem sanção vigente no CEIS, CNEP ou CEPIM. */
+  sancionada: boolean;
 };
 
 const SITUACAO = {
@@ -53,6 +55,15 @@ export function TabelaParticipantes({ linhas }: { linhas: Participante[] }) {
                       <Link href={`/empresas/${p.cnpj}`} className="text-texto hover:text-primaria hover:underline">
                         {p.razao_social}
                       </Link>
+                      {p.sancionada ? (
+                        <span className="ml-2 inline-flex">
+                          <Termo chave="sancao">
+                            <span className="inline-flex rounded-pilula bg-suspensa-fundo px-2 py-0.5 text-legenda font-semibold text-suspensa-texto">
+                              Sanção registrada
+                            </span>
+                          </Termo>
+                        </span>
+                      ) : null}
                     </td>
                     <td className="px-4 py-3 font-mono whitespace-nowrap text-legenda text-texto-2">{cnpj(p.cnpj)}</td>
                     <td className="px-4 py-3 text-legenda text-texto-suave">{p.porte ?? "—"}</td>

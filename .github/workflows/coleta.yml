@@ -7,6 +7,9 @@ name: Coleta PNCP
 #   completa todo dia de madrugada — confere todas pelo /historico, inclusive
 #            homologadas que ganharam ata ou contrato. ~7 min; 49 min com o
 #            PNCP instável.
+#   enriquecer depois da completa — cadastro das empresas na BrasilAPI e
+#            sanções dos arquivos do Portal da Transparência. Também sai à
+#            mão, com modo "enriquecer".
 #
 # O repositório é público, então o Actions não tem cota de minutos. O limite
 # de tempo de cada job existe para uma rodada presa não correr por horas.
@@ -22,9 +25,9 @@ on:
   workflow_dispatch:
     inputs:
       modo:
-        description: "rapida, completa ou tudo"
+        description: "rapida, completa, tudo ou enriquecer (só empresas e sanções)"
         type: choice
-        options: [rapida, completa, tudo]
+        options: [rapida, completa, tudo, enriquecer]
         default: rapida
       limite:
         description: "Máximo de compras por órgão (vazio = todas)"
@@ -44,7 +47,7 @@ concurrency:
 jobs:
   coletar:
     # No push só rodam os testes.
-    if: github.event_name != 'push'
+    if: github.event_name != 'push' && inputs.modo != 'enriquecer'
     runs-on: ubuntu-latest
     # Rápida passa de 15 min só com o PNCP degradado; completa e tudo
     # conferem as 1.013 compras.
@@ -69,6 +72,30 @@ jobs:
           python collector/coleta.py --modo "$MODO" \
             ${{ inputs.limite && format('--limite {0}', inputs.limite) || '' }} \
             ${{ inputs.seco && '--seco' || '' }}
+
+  enriquecer:
+    # Roda mesmo se a completa falhou: as fontes são outras. Empresa que entrou
+    # agora e ficou sem cadastro é pega no dia seguinte.
+    needs: coletar
+    if: always() && (github.event.schedule == '15 6 * * *' || inputs.modo == 'enriquecer')
+    runs-on: ubuntu-latest
+    # A primeira carga foram ~700 empresas a 1 por segundo; depois, poucas.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: collector/requirements.txt
+
+      - run: pip install -r collector/requirements.txt
+
+      - name: Enriquecer
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python collector/enriquecimento.py
 
   testes:
     # Só quando o código do collector muda, não a cada coleta.

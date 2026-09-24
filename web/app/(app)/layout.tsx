@@ -19,8 +19,11 @@ export default async function LayoutApp({ children }: LayoutProps<"/">) {
   try {
     const [ultimos, contagem] = await Promise.all([
       consultar<Sync>(
+        // Só o PNCP: o enriquecimento diário (Transparência, CNPJ) não diz se
+        // as licitações estão em dia.
         `select finalizado_em, status
            from sync_log
+          where fonte like 'PNCP%'
           order by iniciado_em desc
           limit 1`,
       ),

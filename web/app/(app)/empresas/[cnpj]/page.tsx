@@ -7,13 +7,16 @@ import { Termo } from "@/components/Termo";
 import { consultar } from "@/lib/db";
 import { exigirSessao } from "@/lib/sessao";
 import { cnpj as mascaraCnpj, dataCurta, inteiro, moeda, moedaCurta, numeroLicitacao } from "@/lib/format";
+import { rotuloAbrangencia, verificadoEm, vigente } from "@/lib/sancoes";
 
-/* Ficha da empresa (PDF 3.3), parcial.
+/* Ficha da empresa (PDF 3.3).
 
-   Hoje o banco só sabe da empresa o que o resultado do PNCP traz: CNPJ, razão
-   social e porte. Cadastro da Receita, sócios, sanções e contratos são a fase
-   3, e aparecem como "ainda não verificado" — nunca como "nada consta", que
-   afirmaria uma verificação que não aconteceu. */
+   O cadastro e os sócios vêm da Receita pela BrasilAPI, as sanções dos
+   arquivos diários do Portal da Transparência (collector/enriquecimento.py).
+   Empresa que ainda não passou pela consulta mostra "ainda não coletado", e
+   sem conferência das três listas as sanções ficam "Não verificado" — nunca
+   "nada consta", que afirmaria uma verificação que não aconteceu. Contratos
+   ainda não são coletados. */
 
 type Empresa = {
   cnpj: string;
@@ -26,6 +29,21 @@ type Empresa = {
   municipio: string | null;
   uf: string | null;
   capital_social: string | null;
+  atualizado_em: Date | null;
+};
+
+type Socio = { nome: string; qualificacao: string | null; data_entrada: Date | null };
+
+type Sancao = {
+  chave: string;
+  cadastro: "CEIS" | "CNEP" | "CEPIM";
+  categoria: string | null;
+  descricao: string | null;
+  orgao_sancionador: string | null;
+  abrangencia: string | null;
+  processo: string | null;
+  data_inicio: Date | null;
+  data_fim: Date | null;
 };
 
 type Resumo = { participacoes: string; vitorias: string; valor_ganho: string | null };
@@ -43,7 +61,7 @@ type Participacao = {
 const carregar = cache(async (cnpj: string) => {
   const [e] = await consultar<Empresa>(
     `select cnpj, razao_social, nome_fantasia, porte, situacao_cadastral, data_abertura,
-            cnae_principal, municipio, uf, capital_social
+            cnae_principal, municipio, uf, capital_social, atualizado_em
        from empresas
       where cnpj = $1`,
     [cnpj],
@@ -72,7 +90,7 @@ export default async function Ficha(props: PageProps<"/empresas/[cnpj]">) {
   const e = await carregar(cnpj);
   if (!e) notFound();
 
-  const [[resumo], historico, [{ seguindo }]] = await Promise.all([
+  const [[resumo], historico, [{ seguindo }], socios, sancoes, verificacoes] = await Promise.all([
     consultar<Resumo>(
       `select count(*) as participacoes,
               count(*) filter (where situacao = 'vencedora') as vitorias,
@@ -95,21 +113,49 @@ export default async function Ficha(props: PageProps<"/empresas/[cnpj]">) {
       "select exists (select 1 from seguindo_empresas where user_id = $1 and cnpj = $2) as seguindo",
       [sessao.id, cnpj],
     ),
+    consultar<Socio>(
+      "select nome, qualificacao, data_entrada from socios where cnpj = $1 order by data_entrada nulls last, nome",
+      [cnpj],
+    ),
+    consultar<Sancao>(
+      `select chave, cadastro, categoria, descricao, orgao_sancionador, abrangencia, processo, data_inicio, data_fim
+         from sancoes
+        where cnpj = $1
+        order by data_fim desc nulls first`,
+      [cnpj],
+    ),
+    // A última conferência bem-sucedida de cada lista.
+    consultar<{ fonte: string; finalizado_em: Date }>(
+      `select fonte, max(finalizado_em) as finalizado_em
+         from sync_log
+        where fonte like 'Transparência · %' and status = 'ok'
+        group by fonte`,
+    ),
   ]);
+  const listasEm = verificadoEm(verificacoes);
+  const vigentes = sancoes.filter((s) => vigente(s));
+  const encerradas = sancoes.filter((s) => !vigente(s));
 
   const participacoes = Number(resumo.participacoes);
   const vitorias = Number(resumo.vitorias);
   const taxa = participacoes > 0 ? Math.round((vitorias / participacoes) * 100) : null;
 
+  // Sem consulta à Receita, o campo vazio é "não sabemos"; com ela, "não tem".
   const PENDENTE = "ainda não coletado";
+  const vazio = e.atualizado_em ? "—" : PENDENTE;
   const cadastro: { rotulo: string; valor: string; termo?: "porte" }[] = [
-    { rotulo: "Nome fantasia", valor: e.nome_fantasia ?? PENDENTE },
+    { rotulo: "Nome fantasia", valor: e.nome_fantasia ?? vazio },
     { rotulo: "Porte", valor: e.porte ?? "—", termo: "porte" },
-    { rotulo: "Abertura", valor: e.data_abertura ? dataCurta(e.data_abertura) : PENDENTE },
-    { rotulo: "CNAE principal", valor: e.cnae_principal ?? PENDENTE },
-    { rotulo: "Município", valor: e.municipio ? `${e.municipio}${e.uf ? `/${e.uf}` : ""}` : PENDENTE },
-    { rotulo: "Capital social", valor: e.capital_social ? moeda(e.capital_social) : PENDENTE },
+    { rotulo: "Abertura", valor: e.data_abertura ? dataCurta(e.data_abertura) : vazio },
+    { rotulo: "CNAE principal", valor: e.cnae_principal ?? vazio },
+    { rotulo: "Município", valor: e.municipio ? `${e.municipio}${e.uf ? `/${e.uf}` : ""}` : vazio },
+    { rotulo: "Capital social", valor: e.capital_social !== null ? moeda(e.capital_social) : vazio },
   ];
+  const corSituacao = !e.situacao_cadastral
+    ? "bg-encerrada-fundo text-encerrada-texto"
+    : e.situacao_cadastral === "ATIVA"
+      ? "bg-aberta-fundo text-aberta-texto"
+      : "bg-suspensa-fundo text-suspensa-texto";
 
   return (
     <main className="mx-auto w-full max-w-[1440px] flex-1 px-5 py-6 sm:px-10">
@@ -130,12 +176,11 @@ export default async function Ficha(props: PageProps<"/empresas/[cnpj]">) {
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <BotaoSeguir tipo="empresa" cnpj={cnpj} seguindo={seguindo} />
-                <span
-                  title="A situação na Receita Federal entra quando a consulta de CNPJ for implementada."
-                  className="rounded-pilula bg-encerrada-fundo px-2.5 py-1 text-legenda font-semibold text-encerrada-texto"
-                >
-                  Situação na Receita: {e.situacao_cadastral ?? "não consultada"}
-                </span>
+                <Termo chave="situacao_cadastral">
+                  <span className={`${corSituacao} inline-flex rounded-pilula px-2.5 py-1 text-legenda font-semibold`}>
+                    Situação na Receita: {e.situacao_cadastral ?? "não consultada"}
+                  </span>
+                </Termo>
               </div>
             </div>
             <dl className="mt-6 grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-3">
@@ -151,6 +196,11 @@ export default async function Ficha(props: PageProps<"/empresas/[cnpj]">) {
                 </div>
               ))}
             </dl>
+            {e.atualizado_em ? (
+              <p className="mt-4 text-legenda text-texto-suave">
+                Cadastro da Receita Federal, consultado em {dataCurta(e.atualizado_em)}.
+              </p>
+            ) : null}
           </section>
 
           <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -210,14 +260,62 @@ export default async function Ficha(props: PageProps<"/empresas/[cnpj]">) {
         </div>
 
         <aside className="space-y-4">
-          <NaoVerificado titulo="Sanções e impedimentos">
-            Consulta ao CEIS, CNEP e CEPIM, do Portal da Transparência federal. Ainda não
-            implementada: a ausência de registro aqui <strong>não</strong> quer dizer que a empresa
-            não tem sanção.
-          </NaoVerificado>
-          <NaoVerificado titulo="Sócios (QSA)">
-            Quadro de sócios da Receita Federal. Entra com a consulta de CNPJ.
-          </NaoVerificado>
+          {listasEm ? (
+            <Bloco
+              titulo="Sanções e impedimentos"
+              selo={
+                vigentes.length > 0
+                  ? { texto: `${vigentes.length} vigente${vigentes.length > 1 ? "s" : ""}`, cor: "bg-suspensa-fundo text-suspensa-texto" }
+                  : { texto: "Nada consta", cor: "bg-aberta-fundo text-aberta-texto" }
+              }
+              rodape={`Listas CEIS, CNEP e CEPIM do Portal da Transparência, conferidas em ${dataCurta(listasEm)}.`}
+            >
+              {sancoes.length === 0 ? (
+                <p className="text-legenda text-texto-suave">Nenhum registro da empresa nas três listas.</p>
+              ) : (
+                <>
+                  <p className="mb-3 flex items-center gap-1 text-legenda text-texto-suave">
+                    Nem toda sanção impede contratar com Criciúma: veja a abrangência.
+                    <Termo chave="sancao" />
+                  </p>
+                  <ul className="space-y-3">
+                    {[...vigentes, ...encerradas].map((s) => (
+                      <ItemSancao key={`${s.cadastro}-${s.chave}`} s={s} encerrada={!vigente(s)} />
+                    ))}
+                  </ul>
+                </>
+              )}
+            </Bloco>
+          ) : (
+            <NaoVerificado titulo="Sanções e impedimentos">
+              A conferência diária do CEIS, CNEP e CEPIM ainda não rodou completa: a ausência de
+              registro aqui <strong>não</strong> quer dizer que a empresa não tem sanção.
+            </NaoVerificado>
+          )}
+          {e.atualizado_em ? (
+            <Bloco titulo="Sócios (QSA)" rodape={`Receita Federal, consultado em ${dataCurta(e.atualizado_em)}.`}>
+              {socios.length === 0 ? (
+                <p className="text-legenda text-texto-suave">A Receita não informa sócios para este CNPJ.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {socios.map((s) => (
+                    <li key={`${s.nome}-${s.qualificacao}`} className="text-legenda">
+                      <p className="font-semibold text-texto">{s.nome}</p>
+                      <p className="text-texto-suave">
+                        {s.qualificacao ?? "Qualificação não informada"}
+                        {s.data_entrada ? ` · desde ${dataCurta(s.data_entrada)}` : ""}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Bloco>
+          ) : (
+            <NaoVerificado titulo="Sócios (QSA)">
+              Quadro de sócios da Receita Federal. A empresa ainda não passou pela consulta de CNPJ,
+              que roda uma vez por dia.
+            </NaoVerificado>
+          )}
           <NaoVerificado titulo="Contratos vigentes">
             Os contratos ainda não são coletados do PNCP.
           </NaoVerificado>
@@ -251,6 +349,61 @@ function Indicador({
       </p>
       {legenda ? <p className="mt-2 text-legenda text-texto-suave">{legenda}</p> : null}
     </div>
+  );
+}
+
+function Bloco({
+  titulo,
+  selo,
+  rodape,
+  children,
+}: {
+  titulo: string;
+  selo?: { texto: string; cor: string };
+  rodape: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-card border border-borda bg-superficie p-5">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className="text-secao font-bold text-texto">{titulo}</h2>
+        {selo ? (
+          <span className={`${selo.cor} rounded-pilula px-2.5 py-1 text-legenda font-semibold whitespace-nowrap`}>
+            {selo.texto}
+          </span>
+        ) : null}
+      </div>
+      {children}
+      <p className="mt-4 text-legenda text-texto-suave">{rodape}</p>
+    </section>
+  );
+}
+
+const TERMO_LISTA = { CEIS: "ceis", CNEP: "cnep", CEPIM: "cepim" } as const;
+
+function ItemSancao({ s, encerrada }: { s: Sancao; encerrada: boolean }) {
+  const periodo = s.data_inicio
+    ? `${dataCurta(s.data_inicio)} a ${s.data_fim ? dataCurta(s.data_fim) : "sem data final"}`
+    : null;
+  return (
+    <li className={`rounded-controle border border-borda-leve p-3 text-legenda ${encerrada ? "opacity-70" : ""}`}>
+      <p className="flex flex-wrap items-center gap-1 font-semibold text-texto">
+        <Termo chave={TERMO_LISTA[s.cadastro]}>{s.cadastro}</Termo>
+        <span>· {s.categoria ?? s.descricao ?? "Sanção"}</span>
+        {encerrada ? <span className="font-normal text-texto-suave">(prazo encerrado)</span> : null}
+      </p>
+      {s.orgao_sancionador ? <p className="mt-1 text-texto-2">{s.orgao_sancionador}</p> : null}
+      <p className="mt-1 flex items-center gap-1 text-texto-suave">
+        {rotuloAbrangencia(s.abrangencia)}
+        <Termo chave="abrangencia" />
+      </p>
+      {periodo ? <p className="mt-1 font-mono text-texto-suave">{periodo}</p> : null}
+      {s.processo ? (
+        <p className="mt-1 text-texto-suave">
+          {s.cadastro === "CEPIM" ? "Convênio" : "Processo"} <span className="font-mono">{s.processo}</span>
+        </p>
+      ) : null}
+    </li>
   );
 }
 
