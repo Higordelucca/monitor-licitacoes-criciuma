@@ -81,3 +81,22 @@ def test_contrato_sem_arquivo_devolve_lista_vazia():
     api = pncp.Pncp()
     api._c = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(204)))
     assert api.arquivos_contrato("82916818000113", 2023, 1) == []
+
+
+def test_itens_percorre_todas_as_paginas(monkeypatch):
+    # Sem tamanhoPagina o /itens devolve só 10. Até 2026-09-25 o collector
+    # lia só essa primeira página: licitação com 28 itens virava 10.
+    itens = [{"numeroItem": n} for n in range(1, 29)]
+    pedidos = []
+
+    def responder(request):
+        pedidos.append(request.url)
+        pagina = int(request.url.params["pagina"])
+        tamanho = int(request.url.params["tamanhoPagina"])
+        return httpx.Response(200, json=itens[(pagina - 1) * tamanho : pagina * tamanho])
+
+    api = pncp.Pncp()
+    api._c = httpx.Client(transport=httpx.MockTransport(responder))
+    monkeypatch.setattr(pncp, "TAM_PAGINA_ITENS", 10, raising=False)
+    assert [i["numeroItem"] for i in api.itens("1", 2026, 1)] == list(range(1, 29))
+    assert len(pedidos) == 3

@@ -12,6 +12,7 @@ from config import (
     ESPERA_MAXIMA,
     STATUS_BUSCA,
     TAM_PAGINA,
+    TAM_PAGINA_ITENS,
     TENTATIVAS,
     TENTATIVAS_BUSCA,
     TIMEOUT,
@@ -100,10 +101,22 @@ class Pncp:
         return self._get(self._compra(cnpj, ano, sequencial, "/arquivos")) or []
 
     def itens(self, cnpj, ano, sequencial):
-        dados = self._get(self._compra(cnpj, ano, sequencial, "/itens"))
-        if dados is None:
-            return []
-        return dados if isinstance(dados, list) else dados.get("content", [])
+        """Todos os itens da compra. Sem `tamanhoPagina` o PNCP devolve só 10:
+        até 2026-09-25 o collector lia só essa página, e licitação com 28 itens
+        virava 10 (valor estimado, homologado e vencedores incluídos)."""
+        todos, pagina = [], 1
+        while True:
+            dados = self._get(
+                self._compra(cnpj, ano, sequencial, "/itens"),
+                {"pagina": pagina, "tamanhoPagina": TAM_PAGINA_ITENS},
+            )
+            if dados is None:
+                return todos
+            lote = dados if isinstance(dados, list) else dados.get("content", [])
+            todos.extend(lote)
+            if len(lote) < TAM_PAGINA_ITENS:
+                return todos
+            pagina += 1
 
     def historico(self, cnpj, ano, sequencial):
         dados = self._get(self._compra(cnpj, ano, sequencial, "/historico"))

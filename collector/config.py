@@ -39,6 +39,10 @@ STATUS_BUSCA = "divulgada"
 # requisições para 2.
 TAM_PAGINA = 500
 
+# O /itens da compra devolve 10 por página sem `tamanhoPagina`. Com 500, uma
+# compra de 28 itens veio inteira numa chamada (testado em 2026-09-25).
+TAM_PAGINA_ITENS = 500
+
 # pncp.gov.br derruba conexão de forma intermitente. Retry é requisito,
 # não refinamento.
 TENTATIVAS = 6
