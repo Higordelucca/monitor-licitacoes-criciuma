@@ -2,7 +2,7 @@
    como numeric, data como timestamptz — e a máscara mora aqui.
 
    Toda data é renderizada no fuso de Brasília, explicitamente. O servidor do
-   Netlify roda em UTC: sem o timeZone fixo, uma abertura às 21h de Criciúma
+   site roda em UTC (Vercel): sem o timeZone fixo, uma abertura às 21h de Criciúma
    apareceria no dia seguinte. */
 
 const FUSO = "America/Sao_Paulo";
@@ -130,7 +130,7 @@ export function tituloDocumento(titulo: string | null | undefined, tipo: string 
 }
 
 /** Coluna `date` do Postgres ("2017-05-26") para Date. Meio-dia de Brasília
-    em vez da meia-noite do fuso do servidor, que no Netlify (UTC) é 21h do
+    em vez da meia-noite do fuso do servidor, que na Vercel (UTC) é 21h do
     dia anterior em Brasília — toda data sairia um dia antes. Registrado como
     parser do pg em lib/db.ts. */
 export function lerDia(texto: string): Date {

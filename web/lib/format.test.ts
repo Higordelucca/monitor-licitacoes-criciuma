@@ -17,7 +17,7 @@ describe("tituloDocumento", () => {
 
 describe("coluna date do Postgres", () => {
   it("vira meio-dia em Brasília, para cair no mesmo dia em qualquer fuso", () => {
-    // O pg lia date como meia-noite do fuso do servidor. No Netlify (UTC) isso
+    // O pg lia date como meia-noite do fuso do servidor. Na Vercel (UTC) isso
     // é 21h do dia anterior em Brasília, e a Ficha mostraria 25/05 no lugar
     // de 26/05.
     expect(lerDia("2017-05-26").toISOString()).toBe("2017-05-26T15:00:00.000Z");
