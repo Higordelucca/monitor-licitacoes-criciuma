@@ -17,10 +17,15 @@ name: Coleta PNCP
 # Cron do GitHub é em UTC: Brasília = UTC-3. A completa sai às 6h15 UTC, e
 # não às 6h00, para não disputar a vaga com a rápida desse horário: o grupo
 # de concorrência só guarda uma rodada na fila, e a mais nova toma o lugar.
+#
+# A rápida sai nos minutos 7 e 37, fora da virada da hora e da meia hora. O
+# GitHub descarta disparo agendado quando a fila dele está cheia, e o começo de
+# cada hora é o pior momento: com "*/30", em 2026-09-24/25 só 4 de ~40 rodadas
+# previstas saíram.
 
 on:
   schedule:
-    - cron: "*/30 * * * *" # rápida
+    - cron: "7,37 * * * *" # rápida
     - cron: "15 6 * * *" # completa: 3h15 de Brasília
   workflow_dispatch:
     inputs:
