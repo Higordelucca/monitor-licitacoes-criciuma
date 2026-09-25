@@ -21,6 +21,8 @@ import logging
 import sys
 from datetime import datetime, timezone
 
+import psycopg
+
 import db
 import incremental as inc
 import mapeamento as m
@@ -150,13 +152,25 @@ def main():
                 try:
                     # Sem banco (--seco), tudo parece novo e entra completo.
                     estados = db.estado_compras(banco.cursor(), cnpj) if banco else {}
+                    # A leitura abriu transação. Fechada já: o Neon derruba a
+                    # conexão com transação parada há 5 min, e a busca mais a
+                    # primeira compra passam disso (Fundo de Saúde, 2026-09-25).
+                    if banco:
+                        banco.commit()
                     agora = datetime.now(timezone.utc)
                     for n, item in enumerate(api.buscar_compras(orgao_id), 1):
                         if args.limite and n > args.limite:
                             n -= 1
                             break
                         estado = estados.get(item["numero_controle_pncp"])
-                        linhas, acao = processar(api, banco, item, estado, args.modo, args.seco, agora)
+                        try:
+                            linhas, acao = processar(api, banco, item, estado, args.modo, args.seco, agora)
+                        except psycopg.OperationalError as erro:
+                            # Conexão caiu no meio da compra. O rollback abre
+                            # outra, e a compra recomeça do zero, uma vez só.
+                            log.warning("  conexão caiu na compra %d (%s), tentando de novo", n, erro)
+                            banco.rollback()
+                            linhas, acao = processar(api, banco, item, estado, args.modo, args.seco, agora)
                         novos += linhas
                         contagem[acao] += 1
                         # Uma transação por compra. Assim uma falha na

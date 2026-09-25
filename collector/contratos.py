@@ -41,6 +41,10 @@ def precisa_detalhe(modo, id_pncp, conhecidos, hoje):
 def coletar_orgao(api, banco, orgao_id, cnpj, modo, seco, hoje):
     """Devolve quantos contratos novos entraram."""
     conhecidos = db.contratos_conhecidos(banco.cursor(), cnpj) if banco else {}
+    # Fecha a transação da leitura antes de esperar o PNCP: o Neon derruba
+    # conexão com transação parada há 5 min.
+    if banco:
+        banco.commit()
     novos = 0
     for item in api.buscar_contratos(orgao_id):
         id_pncp = item["numero_controle_pncp"]

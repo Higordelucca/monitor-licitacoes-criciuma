@@ -52,3 +52,27 @@ def test_coleta_do_orgao_busca_o_detalhe_pelo_numero_da_busca():
     assert novos == 0  # seco não grava
     assert ("contrato", "82916818000113", "2023", "1") in api.chamadas
     assert ("arquivos", "82916818000113", "2023", "1") in api.chamadas
+
+
+def test_leitura_dos_conhecidos_nao_deixa_transacao_aberta_esperando_o_pncp(monkeypatch):
+    # Mesmo caso da coleta das compras: o Neon derruba a conexão com transação
+    # parada há 5 min, e a busca mais os detalhes passam disso.
+    passos = []
+
+    class Banco:
+        def cursor(self):
+            return self
+
+        def commit(self):
+            passos.append("commit")
+
+    class Api(ApiFalsa):
+        def buscar_contratos(self, orgao_id):
+            passos.append("busca")
+            return []
+
+    monkeypatch.setattr(
+        contratos.db, "contratos_conhecidos", lambda cur, cnpj: passos.append("conhecidos") or {}
+    )
+    contratos.coletar_orgao(Api(), Banco(), 85877, "82916818000113", "rapida", False, HOJE)
+    assert passos == ["conhecidos", "commit", "busca"]

@@ -5,6 +5,7 @@ import pathlib
 import sys
 from datetime import datetime, timezone
 
+import psycopg
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
@@ -175,3 +176,67 @@ def test_pncp_fora_do_ar_interrompe_a_rodada(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["coleta.py", "--seco"])
     assert coleta.main() == 1
     assert len(api.orgaos) == 1
+
+
+# --- conexão com o banco durante a rodada -----------------------------------
+
+
+class Rodada:
+    """main() de um órgão só, com banco e PNCP falsos que anotam cada passo."""
+
+    def __init__(self, monkeypatch, falhas_do_banco=0):
+        self.passos = []
+        self._falhas = falhas_do_banco
+        banco = BancoFalso()
+        banco.passos = self.passos
+        banco.close = lambda: None
+        monkeypatch.setattr(coleta.db, "Banco", lambda: banco)
+        monkeypatch.setattr(coleta.db, "abrir_sync", lambda cur, fonte: 1)
+        monkeypatch.setattr(coleta.db, "fechar_sync", lambda cur, _id, status, *a: self.passos.append(status))
+        monkeypatch.setattr(coleta.db, "estado_compras", lambda cur, cnpj: self.passos.append("estado") or {})
+        monkeypatch.setattr(coleta, "Pncp", lambda: self)
+        monkeypatch.setattr(coleta, "processar", self._processar)
+        monkeypatch.setattr(sys, "argv", ["coleta.py", "--orgao", "85877", "--modo", "itens"])
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+    def buscar_compras(self, orgao_id):
+        self.passos.append("busca")
+        yield ITEM
+
+    def _processar(self, *_):
+        self.passos.append("compra")
+        if self._falhas:
+            self._falhas -= 1
+            raise psycopg.OperationalError("SSL connection has been closed unexpectedly")
+        return 1, "completa"
+
+
+def test_leitura_do_estado_nao_deixa_transacao_aberta_esperando_o_pncp(monkeypatch):
+    # O Neon derruba a conexão com transação parada há 5 min
+    # (idle_in_transaction_session_timeout). Em 2026-09-25 a leitura do estado
+    # ficou aberta durante a busca e a primeira compra, e o Fundo de Saúde caiu.
+    r = Rodada(monkeypatch)
+    assert coleta.main() == 0
+    entre = r.passos[r.passos.index("estado") : r.passos.index("busca")]
+    assert "commit" in entre
+
+
+def test_conexao_que_cai_no_meio_da_compra_e_refeita_e_a_compra_tenta_de_novo(monkeypatch):
+    r = Rodada(monkeypatch, falhas_do_banco=1)
+    assert coleta.main() == 0
+    assert r.passos.count("compra") == 2
+    primeira = r.passos.index("compra")
+    assert r.passos[primeira : primeira + 3] == ["compra", "rollback", "compra"]
+    assert r.passos[-2:] == ["ok", "commit"]
+
+
+def test_conexao_que_cai_duas_vezes_na_mesma_compra_derruba_o_orgao(monkeypatch):
+    r = Rodada(monkeypatch, falhas_do_banco=2)
+    assert coleta.main() == 1
+    assert r.passos.count("compra") == 2
+    assert "erro" in r.passos
