@@ -3,6 +3,7 @@
     python collector/coleta.py                  rápida: o que ainda anda (de hora em hora)
     python collector/coleta.py --modo completa  confere todas pelo histórico (semanal)
     python collector/coleta.py --modo tudo      refaz tudo, sem atalho
+    python collector/coleta.py --modo itens     refaz só as compras sem itens (retomável)
     python collector/coleta.py --orgao 85877    só um órgão
     python collector/coleta.py --limite 5       só as N primeiras de cada órgão
     python collector/coleta.py --seco           não grava nada, só relata
@@ -117,9 +118,10 @@ def main():
     p.add_argument("--seco", action="store_true", help="não grava, só relata")
     p.add_argument(
         "--modo",
-        choices=["rapida", "completa", "tudo"],
+        choices=["rapida", "completa", "tudo", "itens"],
         default="rapida",
-        help="rapida: confere só o que ainda anda; completa: confere tudo; tudo: refaz tudo",
+        help="rapida: confere só o que ainda anda; completa: confere tudo; tudo: refaz tudo; "
+        "itens: refaz só as compras sem itens",
     )
     args = p.parse_args()
 

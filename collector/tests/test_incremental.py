@@ -24,6 +24,13 @@ def test_compra_que_nao_esta_no_banco_entra_completa():
     assert inc.plano("completa", None, T0) == "completa"
 
 
+def test_modo_itens_refaz_so_quem_ainda_nao_tem_itens():
+    # Carga dos itens que retoma de onde parou: `tudo` recomeçaria do zero.
+    assert inc.plano("itens", dict(est("homologada"), tem_itens=False), T0) == "completa"
+    assert inc.plano("itens", dict(est("aberta"), tem_itens=True), T0) == "leve"
+    assert inc.plano("itens", None, T0) == "completa"
+
+
 def test_na_rapida_so_confere_historico_de_quem_ainda_anda():
     for status in ("aberta", "em_analise", "suspensa"):
         assert inc.plano("rapida", est(status), T0) == "historico"

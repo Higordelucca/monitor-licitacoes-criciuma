@@ -140,6 +140,7 @@ def estado_compras(cur, cnpj_orgao):
     cur.execute(
         """
         select l.id_pncp, max(e.data), greatest(l.data_publicacao, max(e.data)),
+               exists (select 1 from itens i where i.licitacao_id = l.id),
                l.modalidade, l.objeto, l.secretaria, l.data_publicacao,
                l.data_abertura, l.status, l.url_pncp
           from licitacoes l
@@ -149,7 +150,7 @@ def estado_compras(cur, cnpj_orgao):
         """,
         (cnpj_orgao,),
     )
-    colunas = ("ultimo_evento", "movimento", *CAMPOS_BUSCA)
+    colunas = ("ultimo_evento", "movimento", "tem_itens", *CAMPOS_BUSCA)
     return {id_pncp: dict(zip(colunas, resto)) for id_pncp, *resto in cur.fetchall()}
 
 

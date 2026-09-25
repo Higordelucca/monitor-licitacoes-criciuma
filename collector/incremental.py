@@ -36,18 +36,21 @@ CAMPOS_BUSCA = (
 def plano(modo, estado, agora):
     """O que fazer com uma compra da busca.
 
-    modo: "rapida" (de hora em hora), "completa" (semanal) ou "tudo" (refaz
+    modo: "rapida" (de hora em hora), "completa" (semanal), "tudo" (refaz
     todas, como a coleta antes de ser incremental — para reprocessar depois
-    de mudar o mapeamento).
+    de mudar o mapeamento) ou "itens" (refaz só as compras sem nenhum item
+    gravado: a carga dos itens, retomável).
     estado: None se a compra não está no banco, senão {"status",
-    "ultimo_evento", "movimento"}; movimento é a data mais recente entre a
-    publicação e o último evento.
+    "ultimo_evento", "movimento", "tem_itens"}; movimento é a data mais
+    recente entre a publicação e o último evento.
 
     Devolve "completa" (busca tudo), "historico" (confere o histórico e busca
     o resto só se houver novidade) ou "leve" (só grava os dados da busca).
     """
     if estado is None or modo == "tudo":
         return "completa"
+    if modo == "itens":
+        return "leve" if estado.get("tem_itens") else "completa"
     if modo == "completa" or estado["status"] == "aberta":
         return "historico"
     movimento = estado.get("movimento")
