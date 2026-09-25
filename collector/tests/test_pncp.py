@@ -61,3 +61,23 @@ def test_erro_4xx_nao_e_pncp_fora_do_ar():
     api._c = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(400)))
     with pytest.raises(httpx.HTTPStatusError):
         api.historico("82916818000113", 2026, 194)
+
+
+def test_busca_de_contratos_pede_o_tipo_contrato():
+    pedidos = []
+
+    def responder(request):
+        pedidos.append(request.url)
+        return httpx.Response(200, json={"items": [{"n": 1}], "total": 1})
+
+    api = pncp.Pncp()
+    api._c = httpx.Client(transport=httpx.MockTransport(responder))
+    assert list(api.buscar_contratos(85877)) == [{"n": 1}]
+    assert pedidos[0].params["tipos_documento"] == "contrato"
+    assert pedidos[0].params["orgaos"] == "85877"
+
+
+def test_contrato_sem_arquivo_devolve_lista_vazia():
+    api = pncp.Pncp()
+    api._c = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(204)))
+    assert api.arquivos_contrato("82916818000113", 2023, 1) == []

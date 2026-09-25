@@ -103,3 +103,45 @@ def test_mapeamento_e_gravacao_concordam_nas_colunas(b):
     b.cur.execute("select column_name from information_schema.columns where table_name = 'itens'")
     colunas = {c for (c,) in b.cur.fetchall()}
     assert set(m.item(dados()[0][0], 1)) <= colunas
+
+
+# --- contratos --------------------------------------------------------------
+
+
+def contrato_da_fixture(**troca):
+    detalhe = json.loads((FIXTURES / "contrato.json").read_text())
+    empresa, linha = m.contrato(detalhe, [])
+    return empresa, {**linha, "id_pncp": "teste-contrato-1", **troca}
+
+
+def test_contrato_liga_na_licitacao_pelo_id_pncp_da_compra(b):
+    empresa, linha = contrato_da_fixture(id_pncp_compra="00000000000000-1-999999/1900")
+    db.upsert_empresa(b.cur, empresa)
+    assert db.upsert_contrato(b.cur, linha) is True
+    b.cur.execute("select licitacao_id, valor_global from contratos where id_pncp = 'teste-contrato-1'")
+    assert b.cur.fetchone() == (b.id, linha["valor_global"])
+
+
+def test_contrato_de_compra_fora_do_banco_fica_sem_licitacao(b):
+    empresa, linha = contrato_da_fixture(id_pncp_compra="nao-existe")
+    db.upsert_empresa(b.cur, empresa)
+    db.upsert_contrato(b.cur, linha)
+    b.cur.execute("select licitacao_id from contratos where id_pncp = 'teste-contrato-1'")
+    assert b.cur.fetchone() == (None,)
+
+
+def test_contrato_regravado_atualiza_e_nao_conta_como_novo(b):
+    empresa, linha = contrato_da_fixture()
+    db.upsert_empresa(b.cur, empresa)
+    db.upsert_contrato(b.cur, linha)
+    assert db.upsert_contrato(b.cur, {**linha, "valor_global": 1}) is False
+    b.cur.execute("select count(*), max(valor_global) from contratos where id_pncp = 'teste-contrato-1'")
+    assert b.cur.fetchone() == (1, 1)
+
+
+def test_contratos_conhecidos_traz_o_fim_da_vigencia(b):
+    empresa, linha = contrato_da_fixture(id_pncp="82916818000113-2-999999/1900")
+    db.upsert_empresa(b.cur, empresa)
+    db.upsert_contrato(b.cur, linha)
+    conhecidos = db.contratos_conhecidos(b.cur, "82916818000113")
+    assert conhecidos["82916818000113-2-999999/1900"] == linha["vigencia_fim"]

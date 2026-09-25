@@ -7,6 +7,8 @@ name: Coleta PNCP
 #   completa todo dia de madrugada — confere todas pelo /historico, inclusive
 #            homologadas que ganharam ata ou contrato. ~7 min; 49 min com o
 #            PNCP instável.
+#   contratos no mesmo job, depois das compras — na rápida só contrato novo;
+#            na completa também os vigentes (collector/contratos.py).
 #   enriquecer depois da completa — cadastro das empresas na BrasilAPI e
 #            sanções dos arquivos do Portal da Transparência. Também sai à
 #            mão, com modo "enriquecer".
@@ -77,6 +79,16 @@ jobs:
           python collector/coleta.py --modo "$MODO" \
             ${{ inputs.limite && format('--limite {0}', inputs.limite) || '' }} \
             ${{ inputs.seco && '--seco' || '' }}
+
+      # Depois das compras, para o contrato achar a licitação que acabou de
+      # entrar. Roda mesmo se as compras falharam: a falha de uma fonte não
+      # segura a outra. "tudo" não existe aqui; vale como completa.
+      - name: Contratos
+        if: ${{ !cancelled() }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MODO: ${{ (inputs.modo == 'completa' || inputs.modo == 'tudo' || github.event.schedule == '15 6 * * *') && 'completa' || 'rapida' }}
+        run: python collector/contratos.py --modo "$MODO" ${{ inputs.seco && '--seco' || '' }}
 
   enriquecer:
     # Roda mesmo se a completa falhou: as fontes são outras. Empresa que entrou

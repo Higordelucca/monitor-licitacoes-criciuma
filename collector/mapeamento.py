@@ -241,6 +241,61 @@ def criterio_unico(itens):
     return None
 
 
+# --- contratos --------------------------------------------------------------
+
+
+def contrato(detalhe, arquivos):
+    """Detalhe de /contratos/{ano}/{seq} e seus /arquivos ->
+    (linha de `empresas`, linha de `contratos`), ou (None, None) para
+    fornecedor pessoa física, pela mesma regra do participante.
+
+    A linha leva `id_pncp_compra` no lugar de `licitacao_id`: quem grava
+    procura a licitação pelo id_pncp, e contrato de compra que não está no
+    banco fica sem ela.
+    """
+    ni = digitos(detalhe.get("niFornecedor"))
+    if detalhe.get("tipoPessoa") != "PJ" or len(ni) != 14:
+        return None, None
+    empresa = {
+        "cnpj": ni,
+        "razao_social": detalhe.get("nomeRazaoSocialFornecedor") or "(sem razão social)",
+        "porte": None,
+    }
+    cnpj_orgao = (detalhe.get("orgaoEntidade") or {}).get("cnpj")
+    ano, seq = detalhe.get("anoContrato"), detalhe.get("sequencialContrato")
+    numero = detalhe.get("numeroContratoEmpenho")
+    linha = {
+        "id_pncp": detalhe["numeroControlePNCP"],
+        "id_pncp_compra": detalhe.get("numeroControlePncpCompra"),
+        "cnpj": ni,
+        "numero": f"{numero}/{ano}" if numero and ano else numero,
+        "tipo": (detalhe.get("tipoContrato") or {}).get("nome"),
+        "objeto": detalhe.get("objetoContrato"),
+        "valor_inicial": _decimal(detalhe.get("valorInicial")),
+        "valor_global": _decimal(detalhe.get("valorGlobal")),
+        "data_assinatura": dia(detalhe.get("dataAssinatura")),
+        "data_publicacao": data(detalhe.get("dataPublicacaoPncp")),
+        "vigencia_inicio": dia(detalhe.get("dataVigenciaInicio")),
+        "vigencia_fim": dia(detalhe.get("dataVigenciaFim")),
+        # Mesma rota das compras (/app/editais/...): o portal usa um módulo só
+        # para editais, contratos e atas. Conferido no código dele em 2026-09-25.
+        "url_pncp": (
+            f"https://pncp.gov.br/app/contratos/{cnpj_orgao}/{ano}/{seq}"
+            if cnpj_orgao and ano and seq else None
+        ),
+        "url_documento": _documento_do_contrato(arquivos),
+    }
+    return empresa, linha
+
+
+def _documento_do_contrato(arquivos):
+    """O arquivo do tipo "Contrato"; sem ele, o primeiro que houver."""
+    com_url = [a for a in arquivos if a.get("url")]
+    principal = next((a for a in com_url if a.get("tipoDocumentoNome") == "Contrato"), None)
+    escolhido = principal or (com_url[0] if com_url else None)
+    return escolhido["url"] if escolhido else None
+
+
 # --- enriquecimento (fase 3) ------------------------------------------------
 
 

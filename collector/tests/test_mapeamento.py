@@ -390,3 +390,49 @@ def test_cepim_usa_cnpj_e_convenio_como_chave():
     assert s["descricao"] == "NAO APRESENTACAO DE DOCUMENTACAO COMPLEMENTAR"
     assert s["orgao_sancionador"].startswith("Ministério da Cultura")
     assert s["data_inicio"] is None and s["data_fim"] is None
+
+
+# --- contratos --------------------------------------------------------------
+
+
+def test_contrato_traz_os_campos_do_esquema():
+    empresa, linha = m.contrato(carregar("contrato.json"), carregar("contrato_arquivos.json"))
+    assert empresa["cnpj"] == "09072082000154"
+    assert empresa["razao_social"] == "FOCALLE - ENGENHARIA VIARIA LTDA."
+    assert linha["id_pncp"] == "82916818000113-2-000001/2023"
+    assert linha["id_pncp_compra"] == "82916818000113-1-000003/2023"
+    assert linha["cnpj"] == "09072082000154"
+    assert linha["numero"] == "211/2023"
+    assert linha["tipo"] == "Contrato (termo inicial)"
+    assert linha["objeto"].startswith("Prestação de serviço")
+    assert linha["valor_inicial"] == Decimal("31500000.0")
+    assert linha["valor_global"] == Decimal("31500000.0")
+    assert linha["data_assinatura"] == date(2023, 9, 29)
+    assert linha["vigencia_inicio"] == date(2024, 2, 18)
+    assert linha["vigencia_fim"] == date(2029, 2, 18)
+    assert linha["data_publicacao"].year == 2023
+
+
+def test_contrato_aponta_para_a_pagina_do_portal():
+    _, linha = m.contrato(carregar("contrato.json"), [])
+    assert linha["url_pncp"] == "https://pncp.gov.br/app/contratos/82916818000113/2023/1"
+
+
+def test_contrato_usa_o_arquivo_do_tipo_contrato():
+    arquivos = [
+        {"tipoDocumentoNome": "Outros", "url": "https://x/outro"},
+        {"tipoDocumentoNome": "Contrato", "url": "https://x/contrato"},
+    ]
+    _, linha = m.contrato(carregar("contrato.json"), arquivos)
+    assert linha["url_documento"] == "https://x/contrato"
+
+
+def test_contrato_sem_arquivo_do_tipo_contrato_usa_o_primeiro_ou_nenhum():
+    detalhe = carregar("contrato.json")
+    assert m.contrato(detalhe, [{"tipoDocumentoNome": "Outros", "url": "https://x/1"}])[1]["url_documento"] == "https://x/1"
+    assert m.contrato(detalhe, [])[1]["url_documento"] is None
+
+
+def test_contrato_com_pessoa_fisica_e_descartado():
+    detalhe = {**carregar("contrato.json"), "tipoPessoa": "PF", "niFornecedor": "12345678901"}
+    assert m.contrato(detalhe, []) == (None, None)

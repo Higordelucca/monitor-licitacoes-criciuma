@@ -64,13 +64,21 @@ class Pncp:
                 espera = min(espera * 2, ESPERA_MAXIMA)
 
     def buscar_compras(self, orgao_id):
-        """Percorre todas as páginas da busca de um órgão."""
+        """Percorre todas as páginas da busca de editais de um órgão."""
+        return self._buscar("edital", orgao_id)
+
+    def buscar_contratos(self, orgao_id):
+        """Contratos do órgão. A busca exige `status`, mas para contrato o
+        ignora: `divulgada` e `encerrado` devolvem a mesma lista (2026-09-25)."""
+        return self._buscar("contrato", orgao_id)
+
+    def _buscar(self, tipo, orgao_id):
         pagina = 1
         while True:
             dados = self._get(
                 API_BUSCA,
                 {
-                    "tipos_documento": "edital",
+                    "tipos_documento": tipo,
                     "status": STATUS_BUSCA,
                     "orgaos": orgao_id,
                     "pagina": pagina,
@@ -106,3 +114,12 @@ class Pncp:
     def resultados(self, cnpj, ano, sequencial, numero_item):
         url = self._compra(cnpj, ano, sequencial, f"/itens/{numero_item}/resultados")
         return self._get(url) or []
+
+    def _contrato(self, cnpj, ano, sequencial, sufixo=""):
+        return f"{API_BASE}/orgaos/{cnpj}/contratos/{ano}/{sequencial}{sufixo}"
+
+    def contrato(self, cnpj, ano, sequencial):
+        return self._get(self._contrato(cnpj, ano, sequencial))
+
+    def arquivos_contrato(self, cnpj, ano, sequencial):
+        return self._get(self._contrato(cnpj, ano, sequencial, "/arquivos")) or []

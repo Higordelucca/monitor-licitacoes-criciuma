@@ -322,6 +322,56 @@ def gravar_itens(cur, licitacao_id, itens, resultados):
     )
 
 
+def upsert_contrato(cur, linha):
+    """Grava o contrato e devolve True se é novo. A licitação é achada pelo
+    id_pncp da compra; compra fora do banco deixa `licitacao_id` nulo.
+
+    A empresa tem de existir antes (FK): quem chama grava com upsert_empresa.
+    """
+    cur.execute(
+        """
+        insert into contratos (
+            id_pncp, licitacao_id, cnpj, numero, tipo, objeto, valor_inicial, valor_global,
+            data_assinatura, data_publicacao, vigencia_inicio, vigencia_fim, url_pncp, url_documento
+        )
+        values (
+            %(id_pncp)s, (select id from licitacoes where id_pncp = %(id_pncp_compra)s),
+            %(cnpj)s, %(numero)s, %(tipo)s, %(objeto)s, %(valor_inicial)s, %(valor_global)s,
+            %(data_assinatura)s, %(data_publicacao)s, %(vigencia_inicio)s, %(vigencia_fim)s,
+            %(url_pncp)s, %(url_documento)s
+        )
+        on conflict (id_pncp) do update set
+            licitacao_id    = excluded.licitacao_id,
+            cnpj            = excluded.cnpj,
+            numero          = excluded.numero,
+            tipo            = excluded.tipo,
+            objeto          = excluded.objeto,
+            valor_inicial   = excluded.valor_inicial,
+            valor_global    = excluded.valor_global,
+            data_assinatura = excluded.data_assinatura,
+            data_publicacao = excluded.data_publicacao,
+            vigencia_inicio = excluded.vigencia_inicio,
+            vigencia_fim    = excluded.vigencia_fim,
+            url_pncp        = excluded.url_pncp,
+            url_documento   = excluded.url_documento,
+            atualizado_em   = now()
+        returning (xmax = 0) as inserido
+        """,
+        linha,
+    )
+    return cur.fetchone()[0]
+
+
+def contratos_conhecidos(cur, cnpj_orgao):
+    """id_pncp -> fim da vigência dos contratos do órgão já no banco. Uma
+    consulta por órgão, como estado_compras."""
+    cur.execute(
+        "select id_pncp, vigencia_fim from contratos where left(id_pncp, 14) = %s",
+        (cnpj_orgao,),
+    )
+    return dict(cur.fetchall())
+
+
 def abrir_sync(cur, fonte):
     cur.execute(
         "insert into sync_log (fonte, status) values (%s, 'rodando') returning id",
