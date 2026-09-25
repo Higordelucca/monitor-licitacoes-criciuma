@@ -7,7 +7,8 @@ import type { Status } from "../components/Pilula";
    está. As etapas saem, então, do status e das três datas que temos. Etapa
    sem data no banco fica sem data na tela — nenhuma é estimada.
 
-   O contrato nunca aparece concluído: a tabela `contratos` ainda está vazia.
+   O contrato fica concluído quando há contrato da licitação no banco, com a
+   data de assinatura do mais antigo.
 
    A primeira etapa é "Publicação no PNCP", não "do edital": em 70 licitações
    a data de publicação no PNCP é posterior à abertura, porque o processo foi
@@ -22,6 +23,8 @@ export type DadosEtapas = {
   data_publicacao: Date | null;
   data_abertura: Date | null;
   data_homologacao: Date | null;
+  /** Assinatura do primeiro contrato da licitação, se houver. */
+  data_contrato: Date | null;
 };
 
 const NOMES = ["Publicação no PNCP", "Propostas", "Julgamento", "Homologação", "Contrato"];
@@ -32,9 +35,10 @@ const NOMES = ["Publicação no PNCP", "Propostas", "Julgamento", "Homologação
 const ATUAL: Partial<Record<Status, number>> = { aberta: 1, em_analise: 2, homologada: 4 };
 
 export function etapas(d: DadosEtapas, agora: Date = new Date()): Etapa[] {
-  const datas = [d.data_publicacao, d.data_abertura, null, d.data_homologacao, null];
+  const datas = [d.data_publicacao, d.data_abertura, null, d.data_homologacao, d.data_contrato];
 
-  const atual = ATUAL[d.status];
+  // Com contrato assinado, o processo chegou ao fim.
+  const atual = d.status === "homologada" && d.data_contrato ? NOMES.length : ATUAL[d.status];
   if (atual !== undefined) {
     return NOMES.map((nome, i) => ({
       nome,

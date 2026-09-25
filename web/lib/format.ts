@@ -48,6 +48,27 @@ export function moedaCurta(valor: Numerico): string {
   return moeda(n);
 }
 
+/** Preço unitário de item: o PNCP publica até quatro casas (combustível a
+    R$ 5,8923 o litro), e cortar em duas mudaria o valor. */
+export function moedaUnitaria(valor: Numerico): string {
+  const n = paraNumero(valor);
+  if (n === null) return "—";
+  return n.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
+}
+
+/** Quantidade de item com a unidade do PNCP: "2,5 Litro", "12.000 UN". */
+export function quantidade(valor: Numerico, unidade: string | null | undefined): string {
+  const n = paraNumero(valor);
+  if (n === null) return "—";
+  const numero = n.toLocaleString("pt-BR", { maximumFractionDigits: 4 });
+  return unidade ? `${numero} ${unidade}` : numero;
+}
+
 export function inteiro(valor: Numerico): string {
   const n = paraNumero(valor);
   return n === null ? "—" : n.toLocaleString("pt-BR");

@@ -3,7 +3,9 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 import { BotaoSeguir } from "@/components/BotaoSeguir";
+import { ListaContratos, type Contrato } from "@/components/ListaContratos";
 import { Termo } from "@/components/Termo";
+import { conferidosEm, contratoVigente } from "@/lib/contratos";
 import { consultar } from "@/lib/db";
 import { exigirSessao } from "@/lib/sessao";
 import { cnpj as mascaraCnpj, dataCurta, inteiro, moeda, moedaCurta, numeroLicitacao } from "@/lib/format";
@@ -16,7 +18,7 @@ import { rotuloAbrangencia, verificadoEm, vigente } from "@/lib/sancoes";
    Empresa que ainda não passou pela consulta mostra "ainda não coletado", e
    sem conferência das três listas as sanções ficam "Não verificado" — nunca
    "nada consta", que afirmaria uma verificação que não aconteceu. Contratos
-   ainda não são coletados. */
+   seguem a mesma regra: "nenhum contrato" só com os sete órgãos conferidos. */
 
 type Empresa = {
   cnpj: string;
@@ -46,7 +48,7 @@ type Sancao = {
   data_fim: Date | null;
 };
 
-type Resumo = { participacoes: string; vitorias: string; valor_ganho: string | null };
+type Resumo = { participacoes: string; vitorias: string };
 
 type Participacao = {
   id: string;
@@ -90,11 +92,10 @@ export default async function Ficha(props: PageProps<"/empresas/[cnpj]">) {
   const e = await carregar(cnpj);
   if (!e) notFound();
 
-  const [[resumo], historico, [{ seguindo }], socios, sancoes, verificacoes] = await Promise.all([
+  const [[resumo], historico, [{ seguindo }], socios, sancoes, verificacoes, contratos, conferencias] = await Promise.all([
     consultar<Resumo>(
       `select count(*) as participacoes,
-              count(*) filter (where situacao = 'vencedora') as vitorias,
-              sum(valor_proposta) filter (where situacao = 'vencedora') as valor_ganho
+              count(*) filter (where situacao = 'vencedora') as vitorias
          from participantes
         where cnpj = $1`,
       [cnpj],
@@ -131,7 +132,27 @@ export default async function Ficha(props: PageProps<"/empresas/[cnpj]">) {
         where fonte like 'Transparência · %' and status = 'ok'
         group by fonte`,
     ),
+    consultar<Contrato>(
+      `select c.id_pncp, c.numero, c.tipo, c.objeto, c.cnpj, e.razao_social, c.licitacao_id,
+              c.valor_inicial, c.valor_global, c.data_assinatura, c.vigencia_inicio, c.vigencia_fim,
+              c.url_pncp, c.url_documento
+         from contratos c
+         join empresas e on e.cnpj = c.cnpj
+        where c.cnpj = $1
+        order by c.data_assinatura desc nulls last, c.id_pncp`,
+      [cnpj],
+    ),
+    consultar<{ fonte: string; finalizado_em: Date }>(
+      `select fonte, max(finalizado_em) as finalizado_em
+         from sync_log
+        where fonte like 'PNCP · Contratos · %' and status = 'ok'
+        group by fonte`,
+    ),
   ]);
+  const contratosEm = conferidosEm(conferencias);
+  // Vigentes primeiro; dentro de cada grupo, a ordem da consulta (mais recente antes).
+  const contratosOrdem = [...contratos.filter((c) => contratoVigente(c)), ...contratos.filter((c) => !contratoVigente(c))];
+  const valorContratado = contratos.reduce((soma, c) => soma + Number(c.valor_global ?? 0), 0);
   const listasEm = verificadoEm(verificacoes);
   const vigentes = sancoes.filter((s) => vigente(s));
   const encerradas = sancoes.filter((s) => !vigente(s));
@@ -208,10 +229,10 @@ export default async function Ficha(props: PageProps<"/empresas/[cnpj]">) {
             <Indicador rotulo="Vitórias" valor={inteiro(vitorias)} termo="vencedora" />
             <Indicador rotulo="Taxa de vitória" valor={taxa === null ? "—" : `${taxa}%`} />
             <Indicador
-              rotulo="Valor ganho"
-              valor={moedaCurta(resumo.valor_ganho)}
-              titulo={moeda(resumo.valor_ganho)}
-              legenda="soma das propostas vencedoras"
+              rotulo="Valor contratado"
+              valor={contratos.length || contratosEm ? moedaCurta(valorContratado) : "—"}
+              titulo={moeda(valorContratado)}
+              legenda={contratosEm || contratos.length ? "soma dos contratos no PNCP" : "contratos ainda não conferidos"}
             />
           </section>
 
@@ -316,13 +337,40 @@ export default async function Ficha(props: PageProps<"/empresas/[cnpj]">) {
               que roda uma vez por dia.
             </NaoVerificado>
           )}
-          <NaoVerificado titulo="Contratos vigentes">
-            Os contratos ainda não são coletados do PNCP.
-          </NaoVerificado>
+          {contratos.length > 0 || contratosEm ? (
+            <Bloco
+              titulo="Contratos"
+              selo={
+                contratos.length > 0
+                  ? { texto: rotuloVigentes(contratosOrdem.filter((c) => contratoVigente(c)).length), cor: "bg-aberta-fundo text-aberta-texto" }
+                  : undefined
+              }
+              rodape={
+                contratosEm
+                  ? `Contratos publicados no PNCP pelos órgãos de Criciúma, conferidos em ${dataCurta(contratosEm)}.`
+                  : "Contratos publicados no PNCP pelos órgãos de Criciúma."
+              }
+            >
+              {contratos.length === 0 ? (
+                <p className="text-legenda text-texto-suave">Nenhum contrato com os órgãos de Criciúma.</p>
+              ) : (
+                <ListaContratos contratos={contratosOrdem} na="empresa" />
+              )}
+            </Bloco>
+          ) : (
+            <NaoVerificado titulo="Contratos">
+              A conferência dos contratos no PNCP ainda não rodou para todos os órgãos: a ausência de
+              contrato aqui <strong>não</strong> quer dizer que a empresa não tenha contrato.
+            </NaoVerificado>
+          )}
         </aside>
       </div>
     </main>
   );
+}
+
+function rotuloVigentes(n: number): string {
+  return n === 0 ? "Nenhum vigente" : n === 1 ? "1 vigente" : `${n} vigentes`;
 }
 
 function Indicador({

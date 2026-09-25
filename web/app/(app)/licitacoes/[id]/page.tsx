@@ -4,10 +4,13 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 import { BotaoSeguir } from "@/components/BotaoSeguir";
 import { LinhaDoTempo } from "@/components/LinhaDoTempo";
+import { ListaContratos, type Contrato } from "@/components/ListaContratos";
 import { ListaDocumentos, type Documento } from "@/components/ListaDocumentos";
 import { Pilula, type Status } from "@/components/Pilula";
+import { TabelaItens, type Item } from "@/components/TabelaItens";
 import { TabelaParticipantes, type Participante } from "@/components/TabelaParticipantes";
 import { Termo } from "@/components/Termo";
+import { conferidosEm } from "@/lib/contratos";
 import { consultar } from "@/lib/db";
 import { etapas } from "@/lib/etapas";
 import { dataCurta, dataHora, haQuantoTempo, moeda, numeroLicitacao } from "@/lib/format";
@@ -18,8 +21,10 @@ import { exigirSessao } from "@/lib/sessao";
 /* Detalhe da licitação (PDF 3.2). O id na URL é o `licitacoes.id`, para que o
    link possa ser mandado por e-mail ou WhatsApp (PDF pág. 2).
 
-   O bloco de itens/lotes do PDF não existe ainda: o collector não grava os
-   itens. */
+   Itens: os 20 primeiros; `?itens=todos` mostra o resto. Contratos: os
+   ligados pelo id_pncp da compra (collector/contratos.py). */
+
+const ITENS_POR_PAGINA = 20;
 
 type Licitacao = {
   id: string;
@@ -71,47 +76,105 @@ export default async function Detalhe(props: PageProps<"/licitacoes/[id]">) {
   const sessao = await exigirSessao();
   const l = await carregar((await props.params).id);
   if (!l) notFound();
+  const todosItens = (await props.searchParams).itens === "todos";
 
-  const [participantes, documentos, historico, [{ total_historico }], [{ seguindo }]] = await Promise.all([
-    consultar<Participante>(
-      // Mesma regra de lib/sancoes.ts (vigente): sem data final ou ainda por vir.
-      `select p.cnpj, e.razao_social, e.porte, p.valor_proposta, p.situacao,
-              exists (
-                select 1 from sancoes s
-                 where s.cnpj = p.cnpj
-                   and (s.data_fim is null
-                        or s.data_fim >= (now() at time zone 'America/Sao_Paulo')::date)
-              ) as sancionada
-         from participantes p
-         join empresas e on e.cnpj = p.cnpj
-        where p.licitacao_id = $1
-        order by nullif(p.valor_proposta, 0) asc nulls last, e.razao_social`,
-      [l.id],
-    ),
-    consultar<Documento>(
-      `select id, tipo, titulo, url, data_publicacao
-         from documentos
-        where licitacao_id = $1
-        order by data_publicacao desc nulls last, id desc`,
-      [l.id],
-    ),
-    consultar<EventoPncp>(
-      `select id, tipo, descricao, data
-         from eventos
-        where licitacao_id = $1
-        order by data desc
-        limit 10`,
-      [l.id],
-    ),
-    consultar<{ total_historico: string }>(
-      "select count(*) as total_historico from eventos where licitacao_id = $1",
-      [l.id],
-    ),
-    consultar<{ seguindo: boolean }>(
-      "select exists (select 1 from seguindo where user_id = $1 and licitacao_id = $2) as seguindo",
-      [sessao.id, l.id],
-    ),
-  ]);
+  const [
+    participantes,
+    documentos,
+    historico,
+    [{ total_historico }],
+    [{ seguindo }],
+    itens,
+    [{ total_itens }],
+    contratos,
+    conferencias,
+  ] = await Promise.all([
+      consultar<Participante>(
+        // Mesma regra de lib/sancoes.ts (vigente): sem data final ou ainda por vir.
+        `select p.cnpj, e.razao_social, e.porte, p.valor_proposta, p.situacao,
+                exists (
+                  select 1 from sancoes s
+                   where s.cnpj = p.cnpj
+                     and (s.data_fim is null
+                          or s.data_fim >= (now() at time zone 'America/Sao_Paulo')::date)
+                ) as sancionada
+           from participantes p
+           join empresas e on e.cnpj = p.cnpj
+          where p.licitacao_id = $1
+          order by nullif(p.valor_proposta, 0) asc nulls last, e.razao_social`,
+        [l.id],
+      ),
+      consultar<Documento>(
+        `select id, tipo, titulo, url, data_publicacao
+           from documentos
+          where licitacao_id = $1
+          order by data_publicacao desc nulls last, id desc`,
+        [l.id],
+      ),
+      consultar<EventoPncp>(
+        `select id, tipo, descricao, data
+           from eventos
+          where licitacao_id = $1
+          order by data desc
+          limit 10`,
+        [l.id],
+      ),
+      consultar<{ total_historico: string }>(
+        "select count(*) as total_historico from eventos where licitacao_id = $1",
+        [l.id],
+      ),
+      consultar<{ seguindo: boolean }>(
+        "select exists (select 1 from seguindo where user_id = $1 and licitacao_id = $2) as seguindo",
+        [sessao.id, l.id],
+      ),
+      consultar<Item>(
+        // O vencedor sai dos resultados em lib/itens.ts; aqui só vêm todos,
+        // na ordem de classificação.
+        `select i.numero, i.descricao, i.quantidade, i.unidade, i.valor_unitario_estimado,
+                i.valor_total_estimado, i.sigiloso, i.situacao,
+                coalesce(
+                  json_agg(
+                    json_build_object(
+                      'cnpj', r.cnpj, 'razao_social', e.razao_social, 'tipo_pessoa', r.tipo_pessoa,
+                      'ordem', r.ordem, 'valor_total_homologado', r.valor_total_homologado,
+                      'valor_unitario_homologado', r.valor_unitario_homologado
+                    ) order by r.ordem nulls first
+                  ) filter (where r.id is not null),
+                  '[]'
+                ) as resultados
+           from itens i
+           left join resultados_item r on r.item_id = i.id
+           left join empresas e on e.cnpj = r.cnpj
+          where i.licitacao_id = $1
+          group by i.id
+          order by i.numero
+          limit $2`,
+        [l.id, todosItens ? null : ITENS_POR_PAGINA],
+      ),
+      consultar<{ total_itens: string }>("select count(*) as total_itens from itens where licitacao_id = $1", [
+        l.id,
+      ]),
+      consultar<Contrato>(
+        `select c.id_pncp, c.numero, c.tipo, c.objeto, c.cnpj, e.razao_social, c.licitacao_id,
+                c.valor_inicial, c.valor_global, c.data_assinatura, c.vigencia_inicio, c.vigencia_fim,
+                c.url_pncp, c.url_documento
+           from contratos c
+           join empresas e on e.cnpj = c.cnpj
+          where c.licitacao_id = $1
+          order by c.data_assinatura desc nulls last, c.id_pncp`,
+        [l.id],
+      ),
+      consultar<{ fonte: string; finalizado_em: Date }>(
+        `select distinct on (fonte) fonte, finalizado_em
+           from sync_log
+          where fonte like 'PNCP · Contratos · %' and status = 'ok'
+          order by fonte, finalizado_em desc`,
+      ),
+    ]);
+  const totalItens = Number(total_itens);
+  const contratosEm = conferidosEm(conferencias);
+  const assinaturas = contratos.map((c) => c.data_assinatura).filter((d): d is Date => d !== null);
+  const dataContrato = assinaturas.length ? new Date(Math.min(...assinaturas.map((d) => d.getTime()))) : null;
 
   const numero = numeroLicitacao(l.processo, l.ano);
   const chaveMod = chaveModalidade(l.modalidade);
@@ -129,7 +192,9 @@ export default async function Detalhe(props: PageProps<"/licitacoes/[id]">) {
 
   const abas = [
     { href: "#resumo", rotulo: "Resumo" },
+    { href: "#contratos", rotulo: `Contratos (${contratos.length})` },
     { href: "#participantes", rotulo: `Participantes (${participantes.length})` },
+    { href: "#itens", rotulo: `Itens (${totalItens.toLocaleString("pt-BR")})` },
     { href: "#documentos", rotulo: `Documentos (${documentos.length})` },
     { href: "#historico", rotulo: "Histórico" },
   ];
@@ -205,9 +270,33 @@ export default async function Detalhe(props: PageProps<"/licitacoes/[id]">) {
             </dl>
           </section>
 
+          <section id="contratos" className="scroll-mt-24">
+            <h2 className="mb-2 flex items-center gap-1 text-secao font-bold text-texto">
+              Contratos <Termo chave="contrato" />
+            </h2>
+            {contratos.length > 0 ? (
+              <ListaContratos contratos={contratos} na="licitacao" />
+            ) : (
+              <p className="rounded-card border border-borda bg-superficie p-6 text-texto-suave">
+                {contratosEm
+                  ? `Nenhum contrato publicado no PNCP até ${dataCurta(contratosEm)}.`
+                  : "Os contratos do PNCP ainda não foram conferidos."}
+              </p>
+            )}
+          </section>
+
           <section id="participantes" className="scroll-mt-24">
             <h2 className="mb-2 text-secao font-bold text-texto">Empresas participantes</h2>
             <TabelaParticipantes linhas={participantes} />
+          </section>
+
+          <section id="itens" className="scroll-mt-24">
+            <h2 className="mb-2 text-secao font-bold text-texto">Itens</h2>
+            <TabelaItens
+              itens={itens}
+              total={totalItens}
+              linkTodos={!todosItens && totalItens > itens.length ? `?itens=todos#itens` : undefined}
+            />
           </section>
 
           <section id="historico" className="scroll-mt-24">
@@ -244,7 +333,7 @@ export default async function Detalhe(props: PageProps<"/licitacoes/[id]">) {
             <h2 className="mb-4 flex items-center gap-1 text-secao font-bold text-texto">
               Andamento <Termo chave="etapas" />
             </h2>
-            <LinhaDoTempo etapas={etapas(l)} />
+            <LinhaDoTempo etapas={etapas({ ...l, data_contrato: dataContrato })} />
           </section>
         </aside>
       </div>

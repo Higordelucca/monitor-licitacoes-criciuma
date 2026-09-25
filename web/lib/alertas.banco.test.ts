@@ -3,7 +3,7 @@ import { join } from "node:path";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-/* Triggers de aviso (db/migrations/006), testados contra o Neon de verdade.
+/* Triggers de aviso (db/migrations/006 e 010), testados contra o Neon de verdade.
    Tudo roda numa transação que termina em rollback: nada fica no banco.
 
    Não entra no `npm test` comum, que roda sem rede. Rodar com:
@@ -124,5 +124,45 @@ describe.skipIf(!ATIVO)("triggers de aviso", () => {
     // O upsert do collector reescreve a mesma situação: não pode avisar de novo.
     await q("update participantes set situacao = 'vencedora' where licitacao_id = $1", [licitacao.id]);
     expect(await avisos("empresa_venceu")).toHaveLength(2);
+  });
+
+  describe("contrato assinado", () => {
+    let empresa: string;
+    const contrato = (publicado: string, licitacaoId: string | null = licitacao.id) =>
+      q(
+        `insert into contratos (id_pncp, licitacao_id, cnpj, numero, objeto, data_publicacao)
+         values ($1, $2, $3, '211/2023', 'Objeto do contrato', $4)`,
+        [`teste-contrato-${++n}`, licitacaoId, empresa, publicado],
+      );
+
+    beforeEach(async () => {
+      [{ cnpj: empresa }] = await q<{ cnpj: string }>("select cnpj from empresas order by cnpj limit 1");
+    });
+
+    it("avisa quem segue a licitação", async () => {
+      await q("insert into seguindo (user_id, licitacao_id) values ($1, $2)", [usuario, licitacao.id]);
+      await contrato(new Date().toISOString());
+      const [aviso] = await avisos("contrato");
+      expect(aviso).toMatchObject({ quantidade: 1, texto: "Objeto do contrato" });
+    });
+
+    it("avisa quem segue a empresa, mesmo sem licitação no banco", async () => {
+      await q("insert into seguindo_empresas (user_id, cnpj) values ($1, $2)", [usuario, empresa]);
+      await contrato(new Date().toISOString(), null);
+      expect(await avisos("contrato")).toHaveLength(1);
+    });
+
+    it("quem segue a licitação e a empresa recebe um aviso só", async () => {
+      await q("insert into seguindo (user_id, licitacao_id) values ($1, $2)", [usuario, licitacao.id]);
+      await q("insert into seguindo_empresas (user_id, cnpj) values ($1, $2)", [usuario, empresa]);
+      await contrato(new Date().toISOString());
+      expect(await avisos("contrato")).toHaveLength(1);
+    });
+
+    it("contrato publicado há mais de 7 dias não avisa: é a primeira carga", async () => {
+      await q("insert into seguindo (user_id, licitacao_id) values ($1, $2)", [usuario, licitacao.id]);
+      await contrato("2023-10-11");
+      expect(await avisos("contrato")).toEqual([]);
+    });
   });
 });

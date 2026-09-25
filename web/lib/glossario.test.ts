@@ -58,4 +58,12 @@ describe("glossário", () => {
       expect(grupos, chave).toContain(e.grupo);
     }
   });
+
+  it("itens e contratos têm explicação no grupo próprio", () => {
+    for (const chave of ["item", "orcamento_sigiloso", "contrato", "empenho", "vigencia", "valor_global"]) {
+      expect(GLOSSARIO, chave).toHaveProperty(chave);
+      expect(GLOSSARIO[chave as keyof typeof GLOSSARIO].grupo, chave).toBe("contrato");
+    }
+    expect(GRUPOS.map((g) => g.id)).toContain("contrato");
+  });
 });

@@ -10,7 +10,7 @@
    regra usada lá, para ninguém ler "homologada" com mais certeza do que o
    dado permite. */
 
-export type Grupo = "status" | "modalidade" | "etapa" | "empresa" | "campo";
+export type Grupo = "status" | "modalidade" | "etapa" | "empresa" | "contrato" | "campo";
 
 export type Entrada = {
   termo: string;
@@ -54,6 +54,14 @@ export const GRUPOS: { id: Grupo; titulo: string; intro: string }[] = [
       "A ficha de cada empresa junta o cadastro da Receita Federal e as listas de sanções " +
       "do Portal da Transparência. O monitor confere as listas uma vez por dia e mostra a " +
       "data da última conferência.",
+  },
+  {
+    id: "contrato",
+    titulo: "Itens e contratos",
+    intro:
+      "Uma licitação compra uma ou mais coisas, os itens. Depois do resultado, o órgão assina " +
+      "o contrato com a empresa vencedora e o publica no PNCP. O monitor mostra os itens de " +
+      "cada licitação e os contratos que saíram dela.",
   },
   {
     id: "campo",
@@ -420,6 +428,74 @@ export const GLOSSARIO = {
         "órgão não informou a abrangência, o monitor diz isso em vez de supor.",
     ],
     baseLegal: "Lei 14.133/2021, art. 156, §§ 4º e 5º",
+  },
+  item: {
+    termo: "Item",
+    grupo: "contrato",
+    curto: "Cada coisa que a licitação compra, com quantidade e valor próprios. Cada item tem o seu vencedor.",
+    longo: [
+      "Uma licitação pode comprar uma coisa só ou centenas: um pregão de material de " +
+        "escritório pode ter um item para caneta, outro para papel, outro para grampeador.",
+      "Cada item é disputado à parte, então empresas diferentes podem vencer itens " +
+        "diferentes da mesma licitação. Às vezes os itens são agrupados em lotes.",
+    ],
+  },
+  orcamento_sigiloso: {
+    termo: "Orçamento sigiloso",
+    grupo: "contrato",
+    curto: "O órgão escondeu o valor que estimou para o item, para não influenciar os lances. O valor aparece depois.",
+    longo: [
+      "A lei permite que o órgão mantenha em segredo quanto espera pagar, até o fim da " +
+        "disputa. Assim as empresas não usam a estimativa como referência para os lances.",
+      "Nesses casos o PNCP publica o valor como zero. O monitor mostra \"Sigiloso\" em vez " +
+        "de zero, porque zero daria a impressão de que o item não custa nada.",
+    ],
+  },
+  contrato: {
+    termo: "Contrato",
+    grupo: "contrato",
+    curto: "O documento que o órgão assina com a empresa vencedora, com o que será entregue, o prazo e o valor.",
+    longo: [
+      "Depois da homologação, o órgão chama a vencedora para assinar o contrato. É ele que " +
+        "obriga a empresa a entregar e o órgão a pagar.",
+      "Todo contrato precisa ser publicado no PNCP. O monitor lê de lá e liga cada contrato " +
+        "à licitação que o originou. Contrato de processo que não está no monitor aparece só " +
+        "na ficha da empresa.",
+    ],
+  },
+  empenho: {
+    termo: "Empenho e outros instrumentos",
+    grupo: "contrato",
+    curto: "Em compras simples, a nota de empenho ou a autorização de fornecimento fazem as vezes do contrato.",
+    longo: [
+      "Nem toda compra tem um contrato longo. Em entregas imediatas ou de valor menor, a lei " +
+        "deixa o órgão usar um documento mais simples: nota de empenho, carta-contrato, " +
+        "autorização de compra ou ordem de serviço.",
+      "O PNCP publica esses documentos junto com os contratos, e o monitor mostra o tipo " +
+        "de cada um. Números como \"AF405614\" costumam ser autorizações de fornecimento.",
+    ],
+  },
+  vigencia: {
+    termo: "Vigência",
+    grupo: "contrato",
+    curto: "O período em que o contrato vale. Vigente é o que ainda não chegou ao último dia.",
+    longo: [
+      "A vigência começa numa data e termina noutra, informadas pelo órgão no PNCP. O " +
+        "monitor considera o contrato vigente até o último dia, inclusive.",
+      "Contrato pode ser prorrogado por termo aditivo. Aditivos ainda não são lidos pelo " +
+        "monitor, então uma prorrogação pode não aparecer aqui.",
+    ],
+  },
+  valor_global: {
+    termo: "Valor global",
+    grupo: "contrato",
+    curto: "O valor total do contrato. Quando é diferente do valor inicial, o contrato mudou de valor depois de assinado.",
+    longo: [
+      "O valor inicial é o da assinatura. O valor global é o que o órgão informa como total " +
+        "atual do contrato, que pode ter crescido ou diminuído.",
+      "O PNCP informa os dois. Quando são diferentes, o monitor mostra o inicial riscado ao " +
+        "lado do global.",
+    ],
   },
 } satisfies Record<string, Entrada>;
 

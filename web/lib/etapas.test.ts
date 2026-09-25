@@ -12,6 +12,7 @@ function base(parcial: Partial<DadosEtapas>): DadosEtapas {
     data_publicacao: MES_PASSADO,
     data_abertura: AMANHA,
     data_homologacao: null,
+    data_contrato: null,
     ...parcial,
   };
 }
@@ -75,5 +76,19 @@ describe("etapas", () => {
       "Propostas",
       "concluida",
     ]);
+  });
+
+  it("homologada com contrato assinado: todas as etapas concluídas, com a data do contrato", () => {
+    const e = etapas(
+      base({ status: "homologada", data_abertura: MES_PASSADO, data_homologacao: ONTEM, data_contrato: AGORA }),
+      AGORA,
+    );
+    expect(e.map((x) => x.estado)).toEqual(["concluida", "concluida", "concluida", "concluida", "concluida"]);
+    expect(e[4].data).toEqual(AGORA);
+  });
+
+  it("homologada sem contrato: o contrato continua por vir", () => {
+    const e = etapas(base({ status: "homologada", data_abertura: MES_PASSADO, data_homologacao: ONTEM }), AGORA);
+    expect(e[4]).toEqual({ nome: "Contrato", data: null, estado: "futura" });
   });
 });

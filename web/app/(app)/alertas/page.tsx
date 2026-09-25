@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "Alertas · Monitor de Licitações �
 
 type Aviso = {
   id: string;
-  tipo: "documento_novo" | "mudanca_status" | "empresa_venceu";
+  tipo: "documento_novo" | "mudanca_status" | "empresa_venceu" | "contrato";
   titulo: string;
   texto: string | null;
   quantidade: number;
@@ -27,16 +27,18 @@ type Aviso = {
 type LicitacaoSeguida = { id: string; processo: string | null; ano: number | null; objeto: string };
 type EmpresaSeguida = { cnpj: string; razao_social: string };
 
-// Azul = informação, âmbar = prazo/status, verde = vitória (PDF 4.4, adaptado).
+// Azul = informação, âmbar = prazo/status, verde = vitória e contrato (PDF 4.4, adaptado).
 const COR: Record<Aviso["tipo"], string> = {
   documento_novo: "bg-primaria",
   mudanca_status: "bg-analise-texto",
   empresa_venceu: "bg-aberta-texto",
+  contrato: "bg-aberta-texto",
 };
 
 function resumo(a: Aviso): string {
   if (a.tipo === "documento_novo" && a.quantidade > 1) return `${a.quantidade} documentos novos · último: ${a.texto}`;
   if (a.tipo === "mudanca_status" && a.quantidade > 1) return `${a.texto} (mudou ${a.quantidade} vezes)`;
+  if (a.tipo === "contrato" && a.quantidade > 1) return `${a.quantidade} contratos novos · último: ${a.texto}`;
   return a.texto ?? "";
 }
 
