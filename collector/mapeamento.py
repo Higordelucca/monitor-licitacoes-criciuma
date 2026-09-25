@@ -181,6 +181,66 @@ def participante(resultado, licitacao_id):
     return empresa, vinculo
 
 
+def _decimal(valor):
+    return None if valor is None else Decimal(str(valor))
+
+
+def item(item_pncp, licitacao_id):
+    """Item de /itens -> linha de `itens`.
+
+    Com orçamento sigiloso o PNCP manda zero nos valores. Fica nulo: "não
+    sabemos" não é "custa nada" — a mesma regra de `valor_estimado`.
+    """
+    sigiloso = bool(item_pncp.get("orcamentoSigiloso"))
+    return {
+        "licitacao_id": licitacao_id,
+        "numero": item_pncp["numeroItem"],
+        "descricao": item_pncp.get("descricao"),
+        "tipo": item_pncp.get("materialOuServico"),
+        "quantidade": _decimal(item_pncp.get("quantidade")),
+        "unidade": item_pncp.get("unidadeMedida"),
+        "valor_unitario_estimado": None if sigiloso else _decimal(item_pncp.get("valorUnitarioEstimado")),
+        "valor_total_estimado": None if sigiloso else _decimal(item_pncp.get("valorTotal")),
+        "sigiloso": sigiloso,
+        "situacao": item_pncp.get("situacaoCompraItemNome"),
+        "criterio_julgamento": item_pncp.get("criterioJulgamentoNome"),
+    }
+
+
+def resultado_item(resultado):
+    """Item de /resultados -> (linha de `empresas` ou None, linha de `resultados_item`).
+
+    A linha leva `numero_item`; quem grava troca pelo `item_id`. Pessoa
+    física entra sem CPF e sem nome — o item teve vencedor, e a tela diz que
+    foi uma pessoa física —, e sem empresa, que só guarda CNPJ.
+    """
+    empresa, _ = participante(resultado, None)
+    linha = {
+        "numero_item": resultado.get("numeroItem"),
+        "cnpj": empresa["cnpj"] if empresa else None,
+        "tipo_pessoa": resultado.get("tipoPessoa"),
+        "ordem": resultado.get("ordemClassificacaoSrp"),
+        "quantidade_homologada": _decimal(resultado.get("quantidadeHomologada")),
+        "valor_unitario_homologado": _decimal(resultado.get("valorUnitarioHomologado")),
+        "valor_total_homologado": _decimal(resultado.get("valorTotalHomologado")),
+        "data_resultado": dia(resultado.get("dataResultado")),
+        "situacao": resultado.get("situacaoCompraItemResultadoNome"),
+    }
+    return empresa, linha
+
+
+def criterio_unico(itens):
+    """Critério de julgamento da licitação, quando todos os itens têm o mesmo.
+
+    A busca não traz o critério; os itens trazem, um por item. Com critérios
+    diferentes não há um só para mostrar, e fica nulo.
+    """
+    criterios = {i.get("criterioJulgamentoNome") for i in itens}
+    if len(criterios) == 1 and None not in criterios:
+        return criterios.pop()
+    return None
+
+
 # --- enriquecimento (fase 3) ------------------------------------------------
 
 

@@ -71,6 +71,7 @@ def coletar_compra(api, banco, item, seco, historico=None):
     novos = 1 if mudou else 0
     novos += db.inserir_documentos(cur, [m.documento(a, licitacao_id) for a in arquivos])
     novos += db.inserir_eventos(cur, [m.evento(h, licitacao_id) for h in historico])
+    db.gravar_itens(cur, licitacao_id, itens, resultados)
 
     for resultado in resultados:
         empresa, vinculo = m.participante(resultado, licitacao_id)

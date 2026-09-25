@@ -8,6 +8,7 @@ import time
 import psycopg
 from psycopg.pq import TransactionStatus
 
+import mapeamento as m
 from incremental import CAMPOS_BUSCA
 
 
@@ -245,6 +246,79 @@ def upsert_participante(cur, linha):
             situacao       = excluded.situacao
         """,
         linha,
+    )
+
+
+def gravar_itens(cur, licitacao_id, itens, resultados):
+    """Grava os itens da compra, quem ficou registrado em cada um e o
+    critério de julgamento da licitação. Recebe o JSON cru de /itens e de
+    /resultados.
+
+    Itens por upsert. Os resultados são refeitos do zero a cada vez, como os
+    sócios: o PNCP não dá chave estável para eles, e resultado cancelado some
+    da lista.
+    """
+    ids = {}
+    for item in itens:
+        cur.execute(
+            """
+            insert into itens (
+                licitacao_id, numero, descricao, tipo, quantidade, unidade,
+                valor_unitario_estimado, valor_total_estimado, sigiloso, situacao,
+                criterio_julgamento
+            )
+            values (
+                %(licitacao_id)s, %(numero)s, %(descricao)s, %(tipo)s, %(quantidade)s,
+                %(unidade)s, %(valor_unitario_estimado)s, %(valor_total_estimado)s,
+                %(sigiloso)s, %(situacao)s, %(criterio_julgamento)s
+            )
+            on conflict (licitacao_id, numero) do update set
+                descricao               = excluded.descricao,
+                tipo                    = excluded.tipo,
+                quantidade              = excluded.quantidade,
+                unidade                 = excluded.unidade,
+                valor_unitario_estimado = excluded.valor_unitario_estimado,
+                valor_total_estimado    = excluded.valor_total_estimado,
+                sigiloso                = excluded.sigiloso,
+                situacao                = excluded.situacao,
+                criterio_julgamento     = excluded.criterio_julgamento,
+                atualizado_em           = now()
+            returning id
+            """,
+            m.item(item, licitacao_id),
+        )
+        ids[item["numeroItem"]] = cur.fetchone()[0]
+
+    cur.execute(
+        """delete from resultados_item r using itens i
+            where i.id = r.item_id and i.licitacao_id = %s""",
+        (licitacao_id,),
+    )
+    for resultado in resultados:
+        empresa, linha = m.resultado_item(resultado)
+        item_id = ids.get(linha.pop("numero_item"))
+        if item_id is None:
+            continue
+        if empresa:
+            upsert_empresa(cur, empresa)
+        cur.execute(
+            """
+            insert into resultados_item (
+                item_id, cnpj, tipo_pessoa, ordem, quantidade_homologada,
+                valor_unitario_homologado, valor_total_homologado, data_resultado, situacao
+            )
+            values (
+                %(item_id)s, %(cnpj)s, %(tipo_pessoa)s, %(ordem)s, %(quantidade_homologada)s,
+                %(valor_unitario_homologado)s, %(valor_total_homologado)s, %(data_resultado)s,
+                %(situacao)s
+            )
+            """,
+            {**linha, "item_id": item_id},
+        )
+
+    cur.execute(
+        "update licitacoes set criterio_julgamento = %s where id = %s",
+        (m.criterio_unico(itens), licitacao_id),
     )
 
 

@@ -213,6 +213,74 @@ def test_cnpj_com_mascara_e_normalizado():
     assert vinculo["situacao"] == "habilitada"
 
 
+# --- itens e resultados por item -------------------------------------------
+
+
+def test_item_traz_os_campos_do_esquema():
+    item = carregar("itens_com_resultado.json")[0]
+    linha = m.item(item, 42)
+    assert linha["licitacao_id"] == 42
+    assert linha["numero"] == 1
+    assert linha["descricao"].startswith("Microtubo")
+    assert linha["tipo"] == "M"
+    assert linha["quantidade"] == Decimal("10.0")
+    assert linha["unidade"] == "PACOTE"
+    assert linha["valor_unitario_estimado"] == Decimal("80.64")
+    assert linha["valor_total_estimado"] == Decimal("806.4")
+    assert linha["sigiloso"] is False
+    assert linha["situacao"] == "Homologado"
+    assert linha["criterio_julgamento"] == "Menor preço"
+
+
+def test_item_sigiloso_fica_sem_valor_estimado():
+    # O PNCP manda zero no lugar do orçamento sigiloso; zero diria "custa nada".
+    item = {"numeroItem": 3, "orcamentoSigiloso": True,
+            "valorUnitarioEstimado": 0, "valorTotal": 0}
+    linha = m.item(item, 1)
+    assert linha["sigiloso"] is True
+    assert linha["valor_unitario_estimado"] is None
+    assert linha["valor_total_estimado"] is None
+
+
+def test_resultado_de_empresa_traz_empresa_e_linha():
+    resultado = carregar("resultados.json")[0]
+    empresa, linha = m.resultado_item(resultado)
+    assert empresa["cnpj"] == "22627453000185"
+    assert linha["numero_item"] == 1
+    assert linha["cnpj"] == "22627453000185"
+    assert linha["tipo_pessoa"] == "PJ"
+    assert linha["ordem"] == 1
+    assert linha["quantidade_homologada"] == Decimal("10.0")
+    assert linha["valor_unitario_homologado"] == Decimal("74.84")
+    assert linha["valor_total_homologado"] == Decimal("748.4")
+    assert linha["data_resultado"] == date(2022, 6, 15)
+    assert linha["situacao"] == "Informado"
+
+
+def test_resultado_de_pessoa_fisica_fica_sem_cnpj_e_sem_empresa():
+    # O item teve vencedor; só não guardamos o CPF nem o nome da pessoa.
+    pf = {"numeroItem": 2, "tipoPessoa": "PF", "niFornecedor": "12345678901",
+          "nomeRazaoSocialFornecedor": "Fulano", "valorTotalHomologado": 10}
+    empresa, linha = m.resultado_item(pf)
+    assert empresa is None
+    assert linha["cnpj"] is None
+    assert linha["tipo_pessoa"] == "PF"
+    assert "Fulano" not in str(linha)
+
+
+def test_criterio_unico_quando_todos_os_itens_concordam():
+    itens = carregar("itens_com_resultado.json")
+    assert m.criterio_unico(itens) == "Menor preço"
+
+
+def test_criterio_misto_ou_ausente_fica_nulo():
+    misto = [{"criterioJulgamentoNome": "Menor preço"},
+             {"criterioJulgamentoNome": "Maior desconto"}]
+    assert m.criterio_unico(misto) is None
+    assert m.criterio_unico([]) is None
+    assert m.criterio_unico([{"criterioJulgamentoNome": None}]) is None
+
+
 # --- enriquecimento: BrasilAPI --------------------------------------------
 # Resposta real de 2026-09-24; nome, telefone e endereço do sócio trocados por
 # marcador, porque o repositório é público.

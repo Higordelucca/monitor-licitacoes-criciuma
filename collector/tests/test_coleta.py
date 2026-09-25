@@ -103,6 +103,29 @@ def test_compra_nova_entra_completa():
     assert "itens" in api.chamadas
 
 
+def test_compra_completa_grava_os_itens_e_os_resultados(monkeypatch):
+    itens = [{"numeroItem": 1, "temResultado": True}, {"numeroItem": 2, "temResultado": False}]
+    resultado = {"numeroItem": 1, "valorTotalHomologado": 5}
+
+    class Api(ApiFalsa):
+        def itens(self, *_):
+            return itens
+
+        def resultados(self, *_):
+            return [resultado]
+
+    gravados = []
+    monkeypatch.setattr(coleta.db, "upsert_licitacao", lambda cur, linha: (7, True))
+    for nome in ("inserir_documentos", "inserir_eventos"):
+        monkeypatch.setattr(coleta.db, nome, lambda cur, linhas: 0)
+    monkeypatch.setattr(coleta.db, "upsert_empresa", lambda *a: None)
+    monkeypatch.setattr(coleta.db, "upsert_participante", lambda *a: None)
+    monkeypatch.setattr(coleta.db, "gravar_itens", lambda cur, lid, i, r: gravados.append((lid, i, r)))
+
+    coleta.coletar_compra(Api([]), BancoFalso(), ITEM, False)
+    assert gravados == [(7, itens, [resultado])]
+
+
 # --- falha num órgão -------------------------------------------------------
 
 
