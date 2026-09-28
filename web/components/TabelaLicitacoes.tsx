@@ -22,12 +22,12 @@ export type LinhaLicitacao = {
 /* Colunas do PDF 3.1, item 6.2, com Órgão no lugar de Secretaria (ver
    CLAUDE.md, "Decisões da fase 4"). Texto começa em A→Z; número, data e valor
    começam do maior. Publicação não está no PDF: é a ordem padrão, e sem ela à
-   vista a lista parece parada quando só se vê a abertura. */
+   vista a lista parece parada quando só se vê a abertura. Para caber ao lado
+   da lateral, o órgão saiu da coluna própria e vai abaixo do objeto. */
 const COLUNAS: { ordem: Ordem; rotulo: string; primeira: "asc" | "desc"; className: string }[] = [
   { ordem: "numero", rotulo: "Nº/Ano", primeira: "desc", className: "w-28" },
   { ordem: "objeto", rotulo: "Objeto", primeira: "asc", className: "" },
   { ordem: "modalidade", rotulo: "Modalidade", primeira: "asc", className: "w-40" },
-  { ordem: "orgao", rotulo: "Órgão", primeira: "asc", className: "w-40" },
   { ordem: "publicacao", rotulo: "Publicação", primeira: "desc", className: "w-28" },
   { ordem: "abertura", rotulo: "Abertura", primeira: "desc", className: "w-28" },
   { ordem: "valor", rotulo: "Valor estimado", primeira: "desc", className: "w-40 text-right" },
@@ -45,7 +45,7 @@ export function TabelaLicitacoes({ linhas, filtros }: { linhas: LinhaLicitacao[]
 
   return (
     <div className="overflow-x-auto rounded-card border border-borda bg-superficie">
-      <table className="w-full min-w-[1060px] border-collapse text-left">
+      <table className="w-full min-w-[960px] border-collapse text-left">
         <thead>
           <tr className="border-b border-borda text-legenda text-texto-suave">
             {COLUNAS.map((c) => (
@@ -73,11 +73,11 @@ export function TabelaLicitacoes({ linhas, filtros }: { linhas: LinhaLicitacao[]
                   <Link href={`/licitacoes/${l.id}`} className="line-clamp-2 text-texto hover:text-primaria hover:underline">
                     {l.objeto}
                   </Link>
+                  <p className="mt-1 text-legenda text-texto-suave">{nomeOrgao(l.orgao)}</p>
                 </Td>
                 <Td className="text-legenda text-texto-suave">
                   {chave ? <Termo chave={chave}>{l.modalidade}</Termo> : (l.modalidade ?? "—")}
                 </Td>
-                <Td className="text-legenda text-texto-suave">{nomeOrgao(l.orgao)}</Td>
                 <Td className="font-mono whitespace-nowrap text-legenda text-texto-suave tabular-nums">
                   {dataCurta(l.data_publicacao)}
                 </Td>
