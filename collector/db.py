@@ -86,13 +86,13 @@ def upsert_licitacao(cur, linha):
         """
         insert into licitacoes (
             id_pncp, numero, ano, modalidade, objeto, secretaria, processo,
-            data_publicacao, data_abertura, data_homologacao,
+            data_publicacao, data_abertura, data_inicio_propostas, data_homologacao,
             valor_estimado, valor_homologado, status, url_pncp, atualizado_em
         )
         values (
             %(id_pncp)s, %(numero)s, %(ano)s, %(modalidade)s, %(objeto)s,
             %(secretaria)s, %(processo)s, %(data_publicacao)s, %(data_abertura)s,
-            %(data_homologacao)s, %(valor_estimado)s, %(valor_homologado)s,
+            %(data_inicio_propostas)s, %(data_homologacao)s, %(valor_estimado)s, %(valor_homologado)s,
             %(status)s, %(url_pncp)s, now()
         )
         on conflict (id_pncp) do update set
@@ -104,6 +104,7 @@ def upsert_licitacao(cur, linha):
             processo         = excluded.processo,
             data_publicacao  = excluded.data_publicacao,
             data_abertura    = excluded.data_abertura,
+            data_inicio_propostas = excluded.data_inicio_propostas,
             data_homologacao = excluded.data_homologacao,
             valor_estimado   = excluded.valor_estimado,
             valor_homologado = excluded.valor_homologado,
@@ -113,6 +114,7 @@ def upsert_licitacao(cur, linha):
         where licitacoes.status           is distinct from excluded.status
            or licitacoes.objeto           is distinct from excluded.objeto
            or licitacoes.data_abertura    is distinct from excluded.data_abertura
+           or licitacoes.data_inicio_propostas is distinct from excluded.data_inicio_propostas
            or licitacoes.data_homologacao is distinct from excluded.data_homologacao
            or licitacoes.valor_estimado   is distinct from excluded.valor_estimado
            or licitacoes.valor_homologado is distinct from excluded.valor_homologado
@@ -142,7 +144,7 @@ def estado_compras(cur, cnpj_orgao):
         select l.id_pncp, max(e.data), greatest(l.data_publicacao, max(e.data)),
                exists (select 1 from itens i where i.licitacao_id = l.id),
                l.modalidade, l.objeto, l.secretaria, l.data_publicacao,
-               l.data_abertura, l.status, l.url_pncp
+               l.data_abertura, l.data_inicio_propostas, l.status, l.url_pncp
           from licitacoes l
           left join eventos e on e.licitacao_id = l.id
          where left(l.id_pncp, 14) = %s
@@ -169,14 +171,17 @@ def atualizar_da_busca(cur, linha):
             secretaria      = %(secretaria)s,
             data_publicacao = %(data_publicacao)s,
             data_abertura   = %(data_abertura)s,
+            data_inicio_propostas = %(data_inicio_propostas)s,
             status          = %(status)s,
             url_pncp        = %(url_pncp)s,
             atualizado_em   = now()
         where id_pncp = %(id_pncp)s
-          and (modalidade, objeto, secretaria, data_publicacao, data_abertura, status, url_pncp)
+          and (modalidade, objeto, secretaria, data_publicacao, data_abertura,
+               data_inicio_propostas, status, url_pncp)
               is distinct from
               (%(modalidade)s, %(objeto)s, %(secretaria)s, %(data_publicacao)s::timestamptz,
-               %(data_abertura)s::timestamptz, %(status)s, %(url_pncp)s)
+               %(data_abertura)s::timestamptz, %(data_inicio_propostas)s::timestamptz,
+               %(status)s, %(url_pncp)s)
         """,
         linha,
     )

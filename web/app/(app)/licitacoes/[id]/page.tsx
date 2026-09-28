@@ -38,6 +38,7 @@ type Licitacao = {
   modo_disputa: string | null;
   data_publicacao: Date | null;
   data_abertura: Date | null;
+  data_inicio_propostas: Date | null;
   data_homologacao: Date | null;
   valor_estimado: string | null;
   valor_homologado: string | null;
@@ -55,7 +56,7 @@ const carregar = cache(async (id: string) => {
   const [l] = await consultar<Licitacao>(
     `select id, processo, ano, modalidade, objeto, secretaria, left(id_pncp, 14) as orgao,
             criterio_julgamento, modo_disputa, data_publicacao, data_abertura,
-            data_homologacao, valor_estimado, valor_homologado, status, url_pncp, atualizado_em
+            data_inicio_propostas, data_homologacao, valor_estimado, valor_homologado, status, url_pncp, atualizado_em
        from licitacoes
       where id = $1`,
     [id],
@@ -185,6 +186,11 @@ export default async function Detalhe(props: PageProps<"/licitacoes/[id]">) {
     { rotulo: "Critério de julgamento", valor: l.criterio_julgamento ?? "—", termo: "criterio_julgamento" },
     { rotulo: "Modo de disputa", valor: l.modo_disputa ?? "—", termo: "modo_disputa" },
     { rotulo: "Publicação no PNCP", valor: dataCurta(l.data_publicacao), mono: true },
+    {
+      rotulo: "Início das propostas",
+      valor: l.data_inicio_propostas ? dataHora(l.data_inicio_propostas) : "—",
+      mono: true,
+    },
     { rotulo: "Abertura", valor: l.data_abertura ? dataHora(l.data_abertura) : "—", mono: true },
     { rotulo: "Valor estimado", valor: moeda(l.valor_estimado), termo: "valor_estimado", mono: true },
     { rotulo: "Valor homologado", valor: moeda(l.valor_homologado), termo: "valor_homologado", mono: true },

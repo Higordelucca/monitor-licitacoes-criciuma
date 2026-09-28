@@ -29,7 +29,7 @@ JANELA = timedelta(days=180)
 # db.estado_compras traz do banco para comparar.
 CAMPOS_BUSCA = (
     "modalidade", "objeto", "secretaria", "data_publicacao", "data_abertura",
-    "status", "url_pncp",
+    "data_inicio_propostas", "status", "url_pncp",
 )
 
 

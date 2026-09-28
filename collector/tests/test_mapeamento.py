@@ -97,6 +97,16 @@ def test_licitacao_preenche_os_campos_do_esquema(busca):
     assert linha["status"] in {"aberta", "em_analise", "homologada", "suspensa", "encerrada"}
 
 
+def test_abertura_e_a_sessao_no_fim_do_prazo_de_propostas(busca):
+    # Na busca, data_inicio_vigencia é o início do recebimento de propostas e
+    # data_fim_vigencia, o fim — a hora da sessão pública (08:30). Até
+    # 2026-09-28 a abertura vinha do início, e o Painel mostrava como abertura
+    # uma data que já tinha passado com as propostas ainda correndo.
+    linha = m.licitacao(busca[0])
+    assert (linha["data_abertura"].date(), linha["data_abertura"].hour) == (date(2022, 6, 14), 8)
+    assert linha["data_inicio_propostas"].date() == date(2022, 5, 30)
+
+
 def test_url_pncp_aponta_para_a_pagina_do_edital_no_portal(busca):
     # O item_url da busca (/compras/{cnpj}/{ano}/{seq}) dá 404 no portal. A rota
     # da página foi conferida no código do próprio portal em 2026-09-23:

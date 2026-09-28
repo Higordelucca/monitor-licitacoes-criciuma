@@ -103,6 +103,7 @@ GRAVADO = {
     # O banco devolve em UTC; o mapeamento, em horário de Brasília.
     "data_publicacao": datetime(2026, 3, 2, 13, 0, tzinfo=timezone.utc),
     "data_abertura": None,
+    "data_inicio_propostas": None,
     "url_pncp": "https://pncp.gov.br/app/editais/82916818000113/2026/1",
 }
 
@@ -113,7 +114,8 @@ def test_mesmos_dados_da_busca_nao_e_mudanca_mesmo_em_outro_fuso():
 
 
 def test_qualquer_campo_da_busca_diferente_e_mudanca():
-    for campo, valor in [("status", "encerrada"), ("objeto", "Outro"), ("data_abertura", T0)]:
+    for campo, valor in [("status", "encerrada"), ("objeto", "Outro"), ("data_abertura", T0),
+                         ("data_inicio_propostas", T0)]:
         assert inc.busca_mudou(dict(GRAVADO, **{campo: valor}), GRAVADO), campo
 
 

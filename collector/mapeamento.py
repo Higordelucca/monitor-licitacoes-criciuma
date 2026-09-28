@@ -106,7 +106,10 @@ def licitacao(item_busca, tem_resultado=False, data_homologacao=None,
         "secretaria": item_busca.get("unidade_nome"),
         "processo": item_busca.get("numero_sequencial"),
         "data_publicacao": data(item_busca.get("data_publicacao_pncp")),
-        "data_abertura": data(item_busca.get("data_inicio_vigencia")),
+        # Na busca, "vigência" é o prazo de propostas. A abertura é a sessão
+        # pública, no fim dele; até 2026-09-28 vinha do início, por engano.
+        "data_abertura": data(item_busca.get("data_fim_vigencia")),
+        "data_inicio_propostas": data(item_busca.get("data_inicio_vigencia")),
         "data_homologacao": data_homologacao,
         "status": status_licitacao(
             item_busca.get("situacao_nome"),
