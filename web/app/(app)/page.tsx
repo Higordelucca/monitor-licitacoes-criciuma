@@ -48,7 +48,7 @@ export default async function Painel(props: PageProps<"/">) {
       consultar<Kpis>("select * from vw_kpis_painel"),
       consultar<LinhaLicitacao>(
         `select id, processo, ano, objeto, modalidade, left(id_pncp, 14) as orgao,
-                data_abertura, valor_estimado, status
+                data_publicacao, data_abertura, valor_estimado, status
            from licitacoes
            ${c.where}
           order by ${c.orderBy}
