@@ -3,6 +3,7 @@ seguidas não cria linha repetida nem gera evento falso."""
 
 import os
 import pathlib
+import signal
 import time
 
 import psycopg
@@ -378,12 +379,18 @@ def contratos_conhecidos(cur, cnpj_orgao):
     return dict(cur.fetchall())
 
 
+# Linhas de sync_log abertas por este processo e ainda não fechadas.
+_abertas = set()
+
+
 def abrir_sync(cur, fonte):
     cur.execute(
         "insert into sync_log (fonte, status) values (%s, 'rodando') returning id",
         (fonte,),
     )
-    return cur.fetchone()[0]
+    sync_id = cur.fetchone()[0]
+    _abertas.add(sync_id)
+    return sync_id
 
 
 def fechar_sync(cur, sync_id, status, registros_novos=0, erro=None):
@@ -395,6 +402,32 @@ def fechar_sync(cur, sync_id, status, registros_novos=0, erro=None):
         """,
         (status, registros_novos, erro, sync_id),
     )
+    _abertas.discard(sync_id)
+
+
+def interromper(banco):
+    """Fecha como erro o que este processo deixou em "rodando".
+
+    Job cancelado ou com tempo esgotado no Actions recebe SIGINT e depois
+    SIGTERM; sem isto a linha ficava "rodando" para sempre e o Header
+    mostrava "Sincronizando agora" sem nada rodar (6 linhas em 2026-09-30).
+    """
+    if not _abertas:
+        return
+    banco.rollback()
+    for sync_id in list(_abertas):
+        fechar_sync(banco.cursor(), sync_id, "erro", 0,
+                    "rodada interrompida: job cancelado ou tempo esgotado")
+    banco.commit()
+
+
+def _sigterm(*_):
+    raise KeyboardInterrupt
+
+
+def interromper_no_sigterm():
+    """SIGTERM passa a interromper como o SIGINT, para `interromper` rodar."""
+    signal.signal(signal.SIGTERM, _sigterm)
 
 
 # --- enriquecimento (fase 3) ------------------------------------------------

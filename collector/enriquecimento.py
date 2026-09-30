@@ -104,6 +104,7 @@ def main():
     hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
     banco = db.Banco()
     falhas = []
+    db.interromper_no_sigterm()
     try:
         if args.so != "empresas":
             with Portal() as portal:
@@ -111,6 +112,10 @@ def main():
         if args.so != "sancoes":
             with BrasilApi() as api:
                 falhas += empresas(api, banco, args.limite)
+    except KeyboardInterrupt:
+        db.interromper(banco)
+        log.error("rodada interrompida")
+        return 130
     finally:
         banco.close()
     if falhas:

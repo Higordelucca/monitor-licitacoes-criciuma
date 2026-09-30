@@ -85,6 +85,7 @@ def main():
 
     banco = None if args.seco else db.Banco()
     falhas = []
+    db.interromper_no_sigterm()
     try:
         with Pncp() as api:
             for orgao_id, (cnpj, nome) in alvos.items():
@@ -106,6 +107,11 @@ def main():
                     if isinstance(erro, PncpFora):
                         log.error("PNCP fora do ar: rodada interrompida")
                         break
+    except KeyboardInterrupt:
+        if banco:
+            db.interromper(banco)
+        log.error("rodada interrompida")
+        return 130
     finally:
         if banco:
             banco.close()

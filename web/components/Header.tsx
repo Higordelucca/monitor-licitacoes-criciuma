@@ -3,22 +3,21 @@ import Link from "next/link";
 import { Menu } from "@/components/Menu";
 import { MenuUsuario } from "@/components/MenuUsuario";
 import { haQuantoTempo } from "@/lib/format";
+import type { ResumoSync } from "@/lib/sincronizacao";
 
 /* Cabeçalho fixo de 68px (PDF 1.x). O botão "Atualizar agora", só para
    admin, ainda não existe: disparar o workflow do GitHub pede um token com
    permissão de escrita no repositório, que não foi decidido onde guardar. */
 
-export function Header({
-  sincronizadoEm,
-  rodando,
-  login,
-  naoLidos,
-}: {
-  sincronizadoEm: Date | string | null;
-  rodando: boolean;
-  login: string;
-  naoLidos: number;
-}) {
+const PONTO: Record<ResumoSync["situacao"], string> = {
+  ok: "bg-aberta-texto",
+  rodando: "bg-analise-texto",
+  atrasado: "bg-analise-texto",
+  falhou: "bg-suspensa-texto",
+};
+
+export function Header({ sync, login, naoLidos }: { sync: ResumoSync; login: string; naoLidos: number }) {
+  const quando = `Sincronizado ${haQuantoTempo(sync.sincronizadoEm)}`;
   return (
     <header className="sticky top-0 z-10 h-header border-b border-borda bg-superficie">
       <div className="mx-auto flex h-full max-w-[1440px] items-center gap-6 px-5 sm:px-10">
@@ -46,11 +45,12 @@ export function Header({
         </Form>
 
         <div className="ml-auto hidden items-center gap-2 text-legenda text-texto-suave sm:flex lg:ml-0">
-          <span
-            aria-hidden
-            className={`size-2 rounded-pilula ${rodando ? "bg-analise-texto" : "bg-aberta-texto"}`}
-          />
-          {rodando ? "Sincronizando agora" : `Sincronizado ${haQuantoTempo(sincronizadoEm)}`}
+          <span aria-hidden className={`size-2 rounded-pilula ${PONTO[sync.situacao]}`} />
+          {sync.situacao === "rodando"
+            ? "Sincronizando agora"
+            : sync.situacao === "falhou"
+              ? `${quando} · última coleta falhou`
+              : quando}
         </div>
 
         {/* Sino (PDF 4.4): leva à tela Alertas, com o número de não lidos. */}

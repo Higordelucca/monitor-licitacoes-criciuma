@@ -140,6 +140,7 @@ def main():
     total_novos = 0
     falhas = []
 
+    db.interromper_no_sigterm()
     try:
         with Pncp() as api:
             for orgao_id, (cnpj, nome) in alvos.items():
@@ -205,6 +206,11 @@ def main():
                     # restrito ao órgão: os seguintes não devem ficar
                     # desatualizados por isso. A falha fica no sync_log e no
                     # código de saída.
+    except KeyboardInterrupt:
+        if banco:
+            db.interromper(banco)
+        log.error("rodada interrompida")
+        return 130
     finally:
         if banco:
             banco.close()

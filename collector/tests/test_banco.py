@@ -88,3 +88,61 @@ def test_rollback_numa_conexao_morta_abre_outra():
     c.banco.rollback()
     assert c.abertas[0].fechada
     assert c.banco.cursor() is c.abertas[1]
+
+
+class CursorSync:
+    """Cursor falso que devolve ids em sequência e guarda os UPDATEs."""
+
+    def __init__(self):
+        self.proximo = 0
+        self.fechadas = {}
+
+    def execute(self, sql, params):
+        if sql.lstrip().startswith("insert"):
+            self.proximo += 1
+        else:
+            status, _, erro, sync_id = params
+            self.fechadas[sync_id] = (status, erro)
+
+    def fetchone(self):
+        return (self.proximo,)
+
+
+class BancoSync:
+    def __init__(self):
+        self.cur = CursorSync()
+        self.commits = 0
+
+    def cursor(self):
+        return self.cur
+
+    def rollback(self):
+        pass
+
+    def commit(self):
+        self.commits += 1
+
+
+def test_interrupcao_fecha_como_erro_o_que_ficou_rodando():
+    # Job cancelado pelo Actions deixava a linha em "rodando" para sempre, e
+    # o Header mostrava "Sincronizando agora" sem nada rodar (6 linhas em
+    # 2026-09-30).
+    b = BancoSync()
+    terminada = db.abrir_sync(b.cursor(), "PNCP · A")
+    db.fechar_sync(b.cursor(), terminada, "ok")
+    presa = db.abrir_sync(b.cursor(), "PNCP · B")
+
+    db.interromper(b)
+
+    assert b.cur.fechadas[terminada] == ("ok", None)
+    assert b.cur.fechadas[presa][0] == "erro"
+    assert "interrompida" in b.cur.fechadas[presa][1]
+    assert b.commits == 1
+
+
+def test_interrupcao_sem_nada_aberto_nao_grava():
+    b = BancoSync()
+    db.fechar_sync(b.cursor(), db.abrir_sync(b.cursor(), "PNCP · A"), "ok")
+    b.cur.fechadas.clear()
+    db.interromper(b)
+    assert b.cur.fechadas == {}

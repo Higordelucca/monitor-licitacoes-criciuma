@@ -1,6 +1,7 @@
 import { Header } from "@/components/Header";
 import { consultar } from "@/lib/db";
 import { exigirSessao } from "@/lib/sessao";
+import { resumoSync, type FonteSync, type ResumoSync } from "@/lib/sincronizacao";
 
 /* Moldura das telas do site: Header em cima, a tela embaixo. O site é
    fechado: o proxy.ts barra quem não tem cookie, e este layout confere a
@@ -9,28 +10,30 @@ import { exigirSessao } from "@/lib/sessao";
    Com a sessão lida do cookie, toda página é renderizada a cada requisição —
    o revalidate de 60s que existia antes do login deixou de fazer sentido. */
 
-type Sync = { finalizado_em: Date | null; status: string };
-
 export default async function LayoutApp({ children }: LayoutProps<"/">) {
   const sessao = await exigirSessao();
 
-  let sync: Sync | undefined;
+  let sync: ResumoSync = { situacao: "falhou", sincronizadoEm: null };
   let naoLidos = 0;
   try {
     const [ultimos, contagem] = await Promise.all([
-      consultar<Sync>(
+      consultar<FonteSync>(
         // Só o PNCP: o enriquecimento diário (Transparência, CNPJ) não diz se
-        // as licitações estão em dia.
-        `select finalizado_em, status
+        // as licitações estão em dia. Uma linha por fonte, com a última
+        // tentativa e o último sucesso; fonte parada há 7 dias saiu da coleta.
+        `select fonte,
+                (array_agg(status order by iniciado_em desc))[1] as ultimo_status,
+                max(iniciado_em) as ultimo_inicio,
+                max(finalizado_em) filter (where status = 'ok') as ultimo_ok
            from sync_log
           where fonte like 'PNCP%'
-          order by iniciado_em desc
-          limit 1`,
+            and iniciado_em > now() - interval '7 days'
+          group by fonte`,
       ),
       // Usa o índice parcial alertas_nao_lidos_idx.
       consultar<{ n: string }>("select count(*) as n from alertas where user_id = $1 and not lido", [sessao.id]),
     ]);
-    sync = ultimos[0];
+    sync = resumoSync(ultimos);
     naoLidos = Number(contagem[0]?.n ?? 0);
   } catch {
     // Sem banco, o Header ainda aparece; a tela mostra o erro.
@@ -39,8 +42,7 @@ export default async function LayoutApp({ children }: LayoutProps<"/">) {
   return (
     <>
       <Header
-        sincronizadoEm={sync?.finalizado_em ?? null}
-        rodando={sync?.status === "rodando"}
+        sync={sync}
         login={sessao.login}
         naoLidos={naoLidos}
       />
