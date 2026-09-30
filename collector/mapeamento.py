@@ -179,9 +179,44 @@ def participante(resultado, licitacao_id):
         "licitacao_id": licitacao_id,
         "cnpj": ni,
         "valor_proposta": resultado.get("valorTotalHomologado"),
-        "situacao": "vencedora" if resultado.get("ordemClassificacaoSrp") == 1 else "habilitada",
+        # Fora do registro de preços a ordem vem nula e o resultado é o
+        # vencedor do item — a mesma regra de `resultados_item` e da tela.
+        "situacao": "vencedora" if resultado.get("ordemClassificacaoSrp") in (None, 1) else "habilitada",
     }
     return empresa, vinculo
+
+
+def participantes(resultados, licitacao_id):
+    """Todos os /resultados da compra -> (empresas, participantes), uma linha
+    por empresa.
+
+    A mesma empresa aparece em vários itens, e `participantes` tem uma linha
+    por licitação e CNPJ. Gravar item a item deixava valer o último: o valor
+    era o de um item só, e quem venceu o item 1 e ficou atrás no 2 virava
+    habilitada. Vencer qualquer item faz a empresa vencedora, com a soma dos
+    itens que venceu; senão, habilitada com a soma dos itens em que ficou
+    registrada.
+    """
+    empresas, grupos = {}, {}
+    for resultado in resultados:
+        empresa, vinculo = participante(resultado, licitacao_id)
+        if not empresa:
+            continue
+        empresas.setdefault(empresa["cnpj"], empresa)
+        grupos.setdefault(vinculo["cnpj"], []).append(vinculo)
+
+    vinculos = []
+    for cnpj, linhas in grupos.items():
+        vencidas = [v for v in linhas if v["situacao"] == "vencedora"]
+        contam = vencidas or linhas
+        valores = [_decimal(v["valor_proposta"]) for v in contam if v["valor_proposta"] is not None]
+        vinculos.append({
+            "licitacao_id": licitacao_id,
+            "cnpj": cnpj,
+            "valor_proposta": sum(valores) if valores else None,
+            "situacao": "vencedora" if vencidas else "habilitada",
+        })
+    return list(empresas.values()), vinculos
 
 
 def _decimal(valor):

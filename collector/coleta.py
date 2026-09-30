@@ -76,11 +76,11 @@ def coletar_compra(api, banco, item, seco, historico=None):
     novos += db.inserir_eventos(cur, [m.evento(h, licitacao_id) for h in historico])
     db.gravar_itens(cur, licitacao_id, itens, resultados)
 
-    for resultado in resultados:
-        empresa, vinculo = m.participante(resultado, licitacao_id)
-        if empresa:
-            db.upsert_empresa(cur, empresa)
-            db.upsert_participante(cur, vinculo)
+    empresas, vinculos = m.participantes(resultados, licitacao_id)
+    for empresa in empresas:
+        db.upsert_empresa(cur, empresa)
+    for vinculo in vinculos:
+        db.upsert_participante(cur, vinculo)
 
     return novos
 

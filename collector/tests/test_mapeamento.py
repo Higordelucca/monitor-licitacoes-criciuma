@@ -223,6 +223,56 @@ def test_cnpj_com_mascara_e_normalizado():
     assert vinculo["situacao"] == "habilitada"
 
 
+def _res(item, ni, valor, ordem=None, tipo="PJ"):
+    return {"numeroItem": item, "tipoPessoa": tipo, "niFornecedor": ni,
+            "nomeRazaoSocialFornecedor": "X", "valorTotalHomologado": valor,
+            "ordemClassificacaoSrp": ordem}
+
+
+def test_sem_ordem_fora_do_registro_de_precos_e_vencedora():
+    # Fora do registro de preços o PNCP manda a ordem nula: o único
+    # resultado do item é o vencedor. Em 28 licitações isso virava habilitada.
+    _, vinculos = m.participantes([_res(1, "22627453000185", 100)], 7)
+    assert vinculos == [{"licitacao_id": 7, "cnpj": "22627453000185",
+                         "valor_proposta": Decimal("100"), "situacao": "vencedora"}]
+
+
+def test_empresa_que_vence_varios_itens_soma_os_valores():
+    _, vinculos = m.participantes(
+        [_res(1, "22627453000185", 100.5), _res(2, "22627453000185", 200.25)], 1)
+    assert len(vinculos) == 1
+    assert vinculos[0]["valor_proposta"] == Decimal("300.75")
+
+
+def test_vencer_um_item_prevalece_sobre_ficar_atras_em_outro():
+    # Antes valia o último item lido: vencedora no 1 e segunda no 2 virava
+    # habilitada, com o valor do item 2.
+    _, vinculos = m.participantes(
+        [_res(1, "22627453000185", 100, ordem=1), _res(2, "22627453000185", 90, ordem=2)], 1)
+    assert vinculos[0]["situacao"] == "vencedora"
+    assert vinculos[0]["valor_proposta"] == Decimal("100")
+
+
+def test_so_registrada_atras_e_habilitada_com_a_soma():
+    _, vinculos = m.participantes(
+        [_res(1, "22627453000185", 90, ordem=2), _res(2, "22627453000185", 10, ordem=3)], 1)
+    assert vinculos[0]["situacao"] == "habilitada"
+    assert vinculos[0]["valor_proposta"] == Decimal("100")
+
+
+def test_participantes_descarta_pessoa_fisica_e_nao_repete_empresa():
+    empresas, vinculos = m.participantes(
+        [_res(1, "12345678901", 50, tipo="PF"),
+         _res(1, "22627453000185", 100), _res(2, "22627453000185", 100)], 1)
+    assert [e["cnpj"] for e in empresas] == ["22627453000185"]
+    assert [v["cnpj"] for v in vinculos] == ["22627453000185"]
+
+
+def test_valor_nulo_nao_vira_zero():
+    _, vinculos = m.participantes([_res(1, "22627453000185", None)], 1)
+    assert vinculos[0]["valor_proposta"] is None
+
+
 # --- itens e resultados por item -------------------------------------------
 
 
