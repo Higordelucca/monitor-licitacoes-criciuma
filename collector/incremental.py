@@ -59,6 +59,25 @@ def plano(modo, estado, agora):
     return "leve"
 
 
+def prioridade(modo, estado, agora):
+    """Chave de ordenação das compras de um órgão: menor vem antes.
+
+    A rápida tem prazo para conferir o histórico (coleta --prazo). Com o PNCP
+    lento, em 2026-09-30, ela era cortada pelo limite do job no meio do
+    Município e os demais órgãos nem começavam. Na ordem abaixo, o que sobra
+    para a próxima rodada é o que menos se mexe: compra nova, depois aberta,
+    depois as que andam, da mais recente para a mais antiga.
+    """
+    acao = plano(modo, estado, agora)
+    if acao == "completa":
+        return (0, 0)
+    if acao == "leve":
+        return (3, 0)
+    movimento = estado.get("movimento")
+    recencia = -movimento.timestamp() if movimento else 0
+    return (1 if estado["status"] == "aberta" else 2, recencia)
+
+
 def busca_mudou(linha, estado):
     """Os dados da busca diferem do que está gravado?
 

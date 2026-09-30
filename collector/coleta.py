@@ -19,6 +19,7 @@ fora do ar — aí a rodada para e a próxima do cron tenta de novo.
 import argparse
 import logging
 import sys
+import time
 from datetime import datetime, timezone
 
 import psycopg
@@ -94,9 +95,16 @@ def atualizar_leve(banco, item, estado, seco):
     return 1 if db.atualizar_da_busca(banco.cursor(), linha) else 0
 
 
-def processar(api, banco, item, estado, modo, seco, agora):
-    """Devolve (linhas novas, "completa" | "leve")."""
+def processar(api, banco, item, estado, modo, seco, agora, adiar=False):
+    """Devolve (linhas novas, "completa" | "leve" | "adiada").
+
+    Com `adiar`, o prazo da rodada acabou: a conferência do histórico fica
+    para a próxima e a compra só recebe os dados da busca. Compra nova entra
+    mesmo assim — é o que a rápida existe para pegar.
+    """
     acao = inc.plano(modo, estado, agora)
+    if acao == "historico" and adiar:
+        return atualizar_leve(banco, item, estado, seco), "adiada"
     historico = None
     if acao == "historico":
         historico = api.historico(item["orgao_cnpj"], item["ano"], item["numero_sequencial"])
@@ -125,6 +133,11 @@ def main():
         help="rapida: confere só o que ainda anda; completa: confere tudo; tudo: refaz tudo; "
         "itens: refaz só as compras sem itens",
     )
+    p.add_argument(
+        "--prazo",
+        type=float,
+        help="minutos para conferir histórico; depois disso a conferência fica para a próxima rodada",
+    )
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -140,6 +153,9 @@ def main():
     total_novos = 0
     falhas = []
 
+    # Contado do início do processo, para todos os órgãos juntos.
+    prazo = time.monotonic() + args.prazo * 60 if args.prazo else None
+
     db.interromper_no_sigterm()
     try:
         with Pncp() as api:
@@ -149,7 +165,7 @@ def main():
                     sync_id = db.abrir_sync(banco.cursor(), f"PNCP · {nome}")
                     banco.commit()
                 novos = n = 0
-                contagem = {"completa": 0, "leve": 0}
+                contagem = {"completa": 0, "leve": 0, "adiada": 0}
                 try:
                     # Sem banco (--seco), tudo parece novo e entra completo.
                     estados = db.estado_compras(banco.cursor(), cnpj) if banco else {}
@@ -159,19 +175,24 @@ def main():
                     if banco:
                         banco.commit()
                     agora = datetime.now(timezone.utc)
-                    for n, item in enumerate(api.buscar_compras(orgao_id), 1):
+                    compras = sorted(
+                        api.buscar_compras(orgao_id),
+                        key=lambda c: inc.prioridade(args.modo, estados.get(c["numero_controle_pncp"]), agora),
+                    )
+                    for n, item in enumerate(compras, 1):
                         if args.limite and n > args.limite:
                             n -= 1
                             break
                         estado = estados.get(item["numero_controle_pncp"])
+                        adiar = prazo is not None and time.monotonic() > prazo
                         try:
-                            linhas, acao = processar(api, banco, item, estado, args.modo, args.seco, agora)
+                            linhas, acao = processar(api, banco, item, estado, args.modo, args.seco, agora, adiar)
                         except psycopg.OperationalError as erro:
                             # Conexão caiu no meio da compra. O rollback abre
                             # outra, e a compra recomeça do zero, uma vez só.
                             log.warning("  conexão caiu na compra %d (%s), tentando de novo", n, erro)
                             banco.rollback()
-                            linhas, acao = processar(api, banco, item, estado, args.modo, args.seco, agora)
+                            linhas, acao = processar(api, banco, item, estado, args.modo, args.seco, agora, adiar)
                         novos += linhas
                         contagem[acao] += 1
                         # Uma transação por compra. Assim uma falha na
@@ -183,12 +204,16 @@ def main():
                             banco.commit()
                         if n % 25 == 0:
                             log.info("  %s: %d compras, %d linhas novas", nome, n, novos)
+                    adiadas = contagem["adiada"]
                     if banco:
-                        db.fechar_sync(banco.cursor(), sync_id, "ok", novos)
+                        db.fechar_sync(
+                            banco.cursor(), sync_id, "parcial" if adiadas else "ok", novos,
+                            f"{adiadas} conferências de histórico adiadas pelo prazo" if adiadas else None,
+                        )
                         banco.commit()
                     log.info(
-                        "%s: %d compras (%d completas, %d leves), %d linhas novas",
-                        nome, n, contagem["completa"], contagem["leve"], novos,
+                        "%s: %d compras (%d completas, %d leves, %d adiadas), %d linhas novas",
+                        nome, n, contagem["completa"], contagem["leve"], adiadas, novos,
                     )
                     total_novos += novos
                 except Exception as erro:

@@ -63,6 +63,19 @@ def test_em_analise_sem_novidade_so_confere_o_historico():
     assert api.chamadas == ["historico"]
 
 
+def test_depois_do_prazo_a_conferencia_fica_para_a_proxima():
+    api = ApiFalsa([{"logManutencaoDataInclusao": "2026-09-23T15:00:00"}])
+    _, acao = coleta.processar(api, None, ITEM, estado("aberta"), "rapida", True, ULTIMO, adiar=True)
+    assert acao == "adiada"
+    assert api.chamadas == []
+
+
+def test_depois_do_prazo_compra_nova_ainda_entra():
+    api = ApiFalsa([])
+    _, acao = coleta.processar(api, None, ITEM, None, "rapida", True, ULTIMO, adiar=True)
+    assert acao == "completa"
+
+
 def test_com_novidade_busca_o_resto_sem_repetir_o_historico():
     api = ApiFalsa([{"logManutencaoDataInclusao": "2026-09-23T15:00:00"}])
     _, acao = coleta.processar(api, None, ITEM, estado("em_analise"), "rapida", True, ULTIMO)

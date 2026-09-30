@@ -56,6 +56,10 @@ describe("resumo da sincronização no Header", () => {
     expect(r.situacao).toBe("atrasado");
   });
 
+  it("parcial (conferências adiadas pelo prazo) não é falha", () => {
+    expect(resumoSync([fonte({ ultimo_status: "parcial" })], AGORA).situacao).toBe("ok");
+  });
+
   it("sem linha nenhuma não afirma nada", () => {
     expect(resumoSync([], AGORA)).toEqual({ situacao: "falhou", sincronizadoEm: null });
   });

@@ -20,14 +20,18 @@ API_BUSCA = os.environ.get("PNCP_API_BUSCA", "https://pncp.gov.br/api/search/")
 #   não os da unidade sediada aqui.
 #   FUPESC — fundo penitenciário estadual, 1.064 editais de toda Santa Catarina.
 #   CISAMREC, Consórcio Macro Sul — consórcios que licitam para várias cidades.
+#
+# A ordem é a da coleta. O Município vai por último: com 756 compras e o
+# PNCP lento, ele gastava o prazo da rápida e os outros nem começavam
+# (2026-09-30).
 ORGAOS = {
-    85877: ("82916818000113", "Município de Criciúma"),
     58246: ("08435209000190", "Fundo Municipal de Saúde"),
     54398: ("05140677000149", "CriciúmaPrev"),
     42823: ("00074312000140", "Fundação Cultural de Criciúma"),
     40426: ("83728949000130", "Câmara Municipal de Criciúma"),
     8848: ("11786437000119", "Fundo Municipal de Assistência Social"),
     40633: ("86951555000134", "Fundação Municipal de Esportes"),
+    85877: ("82916818000113", "Município de Criciúma"),
 }
 
 # A API de busca exige o filtro status e recusa a requisição sem ele.

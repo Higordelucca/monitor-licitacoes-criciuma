@@ -75,8 +75,13 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           # O cron das 6h15 é o da rodada completa; o resto é rápida.
           MODO: ${{ inputs.modo || (github.event.schedule == '15 6 * * *' && 'completa' || 'rapida') }}
+        # Na rápida, 6 min para conferir histórico; o que sobrar fica para a
+        # próxima rodada. O pior caso de uma chamada ao PNCP passa de 4 min,
+        # e depois ainda vêm os contratos: o job tem 15.
         run: |
-          python collector/coleta.py --modo "$MODO" \
+          PRAZO=""
+          if [ "$MODO" = rapida ]; then PRAZO="--prazo 6"; fi
+          python collector/coleta.py --modo "$MODO" $PRAZO \
             ${{ inputs.limite && format('--limite {0}', inputs.limite) || '' }} \
             ${{ inputs.seco && '--seco' || '' }}
 

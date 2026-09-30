@@ -21,10 +21,12 @@ export default async function LayoutApp({ children }: LayoutProps<"/">) {
         // Só o PNCP: o enriquecimento diário (Transparência, CNPJ) não diz se
         // as licitações estão em dia. Uma linha por fonte, com a última
         // tentativa e o último sucesso; fonte parada há 7 dias saiu da coleta.
+        // Parcial é a rápida que adiou conferências pelo prazo: a busca e as
+        // compras novas entraram, então conta como sincronizada.
         `select fonte,
                 (array_agg(status order by iniciado_em desc))[1] as ultimo_status,
                 max(iniciado_em) as ultimo_inicio,
-                max(finalizado_em) filter (where status = 'ok') as ultimo_ok
+                max(finalizado_em) filter (where status in ('ok', 'parcial')) as ultimo_ok
            from sync_log
           where fonte like 'PNCP%'
             and iniciado_em > now() - interval '7 days'

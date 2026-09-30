@@ -62,6 +62,27 @@ def test_modo_tudo_refaz_tudo_como_antes():
     assert inc.plano("tudo", est("homologada"), T0) == "completa"
 
 
+# --- prioridade --------------------------------------------------------------
+
+
+def test_na_rapida_nova_vem_antes_de_aberta_que_vem_antes_do_resto():
+    # Com o PNCP lento a rápida não confere tudo antes do prazo: o que fica
+    # para a próxima deve ser o que menos se mexe.
+    compras = {
+        "homologada": est("homologada"),
+        "analise_antiga": est("em_analise", T0 - timedelta(days=100)),
+        "analise_recente": est("em_analise", T0 - timedelta(days=1)),
+        "aberta": est("aberta", T0 - timedelta(days=300)),
+        "nova": None,
+    }
+    ordem = sorted(compras, key=lambda k: inc.prioridade("rapida", compras[k], T0))
+    assert ordem == ["nova", "aberta", "analise_recente", "analise_antiga", "homologada"]
+
+
+def test_prioridade_aceita_movimento_nulo():
+    assert inc.prioridade("rapida", est("aberta", None), T0) < inc.prioridade("rapida", est("homologada"), T0)
+
+
 # --- houve_novidade --------------------------------------------------------
 
 
