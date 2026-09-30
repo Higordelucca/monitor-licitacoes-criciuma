@@ -1,4 +1,6 @@
+import { FaixaAvisos } from "@/components/FaixaAvisos";
 import { Header } from "@/components/Header";
+import { avisosVigentes } from "@/lib/avisos";
 import { consultar } from "@/lib/db";
 import { exigirSessao } from "@/lib/sessao";
 import { resumoSync, type FonteSync, type ResumoSync } from "@/lib/sincronizacao";
@@ -48,6 +50,7 @@ export default async function LayoutApp({ children }: LayoutProps<"/">) {
         login={sessao.login}
         naoLidos={naoLidos}
       />
+      <FaixaAvisos avisos={avisosVigentes()} />
       {children}
     </>
   );
