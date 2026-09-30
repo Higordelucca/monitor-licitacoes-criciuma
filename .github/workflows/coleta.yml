@@ -20,6 +20,13 @@ name: Coleta PNCP
 # não às 6h00, para não disputar a vaga com a rápida desse horário: o grupo
 # de concorrência só guarda uma rodada na fila, e a mais nova toma o lugar.
 #
+# O cron do GitHub não é confiável: de 24/09 a 30/09/2026 saíram 4 a 7 das
+# ~49 rodadas agendadas por dia, e a completa começava 6 a 7 h atrasada. Por
+# isso as rodadas são disparadas de fora, pelo cron-job.org, com
+# workflow_dispatch (rápida a cada 30 min, completa às 3h15 de Brasília). O
+# token é fine-grained, só Actions deste repositório, e vence em 30/09/2027.
+# O cron abaixo fica de reserva.
+#
 # A rápida sai nos minutos 7 e 37, fora da virada da hora e da meia hora. O
 # GitHub descarta disparo agendado quando a fila dele está cheia, e o começo de
 # cada hora é o pior momento: com "*/30", em 2026-09-24/25 só 4 de ~40 rodadas
@@ -97,9 +104,10 @@ jobs:
 
   enriquecer:
     # Roda mesmo se a completa falhou: as fontes são outras. Empresa que entrou
-    # agora e ficou sem cadastro é pega no dia seguinte.
+    # agora e ficou sem cadastro é pega no dia seguinte. A completa chega pelo
+    # cron do GitHub ou disparada de fora (cron-job.org, modo "completa").
     needs: coletar
-    if: always() && (github.event.schedule == '15 6 * * *' || inputs.modo == 'enriquecer')
+    if: always() && (github.event.schedule == '15 6 * * *' || inputs.modo == 'completa' || inputs.modo == 'enriquecer')
     runs-on: ubuntu-latest
     # A primeira carga foram ~700 empresas a 1 por segundo; depois, poucas.
     timeout-minutes: 60
