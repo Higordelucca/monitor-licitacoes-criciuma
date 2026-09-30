@@ -48,7 +48,7 @@ type Sancao = {
   data_fim: Date | null;
 };
 
-type Resumo = { participacoes: string; vitorias: string };
+type Resumo = { participacoes: string; vitorias: string; itens_vencidos: string };
 
 type Participacao = {
   id: string;
@@ -94,10 +94,12 @@ export default async function Ficha(props: PageProps<"/empresas/[cnpj]">) {
 
   const [[resumo], historico, [{ seguindo }], socios, sancoes, verificacoes, contratos, conferencias] = await Promise.all([
     consultar<Resumo>(
-      `select count(*) as participacoes,
-              count(*) filter (where situacao = 'vencedora') as vitorias
-         from participantes
-        where cnpj = $1`,
+      // Sem taxa de vitória: o PNCP só publica vencedoras e registradas, nunca
+      // quem perdeu, e a taxa dava 100% para 646 de 858 empresas. No lugar,
+      // os itens vencidos (ordem 1 ou nula, a regra de lib/itens.ts).
+      `select (select count(*) from participantes where cnpj = $1) as participacoes,
+              (select count(*) from participantes where cnpj = $1 and situacao = 'vencedora') as vitorias,
+              (select count(*) from resultados_item where cnpj = $1 and coalesce(ordem, 1) = 1) as itens_vencidos`,
       [cnpj],
     ),
     consultar<Participacao>(
@@ -159,7 +161,7 @@ export default async function Ficha(props: PageProps<"/empresas/[cnpj]">) {
 
   const participacoes = Number(resumo.participacoes);
   const vitorias = Number(resumo.vitorias);
-  const taxa = participacoes > 0 ? Math.round((vitorias / participacoes) * 100) : null;
+  const itensVencidos = Number(resumo.itens_vencidos);
 
   // Sem consulta à Receita, o campo vazio é "não sabemos"; com ela, "não tem".
   const PENDENTE = "ainda não coletado";
@@ -227,7 +229,12 @@ export default async function Ficha(props: PageProps<"/empresas/[cnpj]">) {
           <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <Indicador rotulo="Participações" valor={inteiro(participacoes)} />
             <Indicador rotulo="Vitórias" valor={inteiro(vitorias)} termo="vencedora" />
-            <Indicador rotulo="Taxa de vitória" valor={taxa === null ? "—" : `${taxa}%`} />
+            <Indicador
+              rotulo="Itens vencidos"
+              valor={inteiro(itensVencidos)}
+              termo="item"
+              legenda="o PNCP não informa quem perdeu"
+            />
             <Indicador
               rotulo="Valor contratado"
               valor={contratos.length || contratosEm ? moedaCurta(valorContratado) : "—"}
@@ -383,7 +390,7 @@ function Indicador({
   rotulo: string;
   valor: string;
   legenda?: string;
-  termo?: "vencedora";
+  termo?: "vencedora" | "item";
   titulo?: string;
 }) {
   return (
