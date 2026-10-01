@@ -223,8 +223,11 @@ def main():
                     falhas.append(nome)
                     # Com o PNCP fora do ar, os órgãos seguintes só repetiriam
                     # as mesmas tentativas: em 2026-09-24 isso fez uma rodada
-                    # durar 48 min. A próxima rodada do cron tenta de novo.
-                    if isinstance(erro, PncpFora):
+                    # durar 48 min. Mas a busca também cai em rajadas, e em
+                    # 2026-10-01 um 503 no primeiro órgão deixou os outros seis
+                    # sem coleta. Com prazo, segue para o próximo até ele
+                    # acabar; sem prazo (completa), para já.
+                    if isinstance(erro, PncpFora) and (prazo is None or time.monotonic() > prazo):
                         log.error("PNCP fora do ar: rodada interrompida")
                         break
                     # Outro erro (uma compra com dado estranho, o banco) fica

@@ -191,6 +191,46 @@ def test_pncp_fora_do_ar_interrompe_a_rodada(monkeypatch):
     assert len(api.orgaos) == 1
 
 
+class PncpForaUmTempo(PncpForaDoAr):
+    """A busca cai nos órgãos em `fora`; cada busca avança o relógio."""
+
+    def __init__(self, fora, relogio, custo):
+        super().__init__()
+        self.fora, self.relogio, self.custo = fora, relogio, custo
+
+    def buscar_compras(self, orgao_id):
+        self.orgaos.append(orgao_id)
+        self.relogio[0] += self.custo
+        if orgao_id in self.fora:
+            raise coleta.PncpFora("503 Service Unavailable")
+        return []
+
+
+def test_com_prazo_busca_que_cai_num_orgao_nao_impede_os_seguintes(monkeypatch):
+    # Em 2026-10-01 a busca deu 503 no Fundo de Saúde, o primeiro da fila, e
+    # os outros seis nem foram tentados.
+    relogio = [0.0]
+    primeiro = next(iter(coleta.ORGAOS))
+    api = PncpForaUmTempo({primeiro}, relogio, custo=1)
+    monkeypatch.setattr(coleta, "Pncp", lambda: api)
+    monkeypatch.setattr(coleta.time, "monotonic", lambda: relogio[0])
+    monkeypatch.setattr(sys, "argv", ["coleta.py", "--seco", "--prazo", "6"])
+    assert coleta.main() == 1
+    assert api.orgaos == list(coleta.ORGAOS)
+
+
+def test_com_prazo_esgotado_pncp_fora_interrompe(monkeypatch):
+    # Fora do ar de verdade, cada órgão gasta ~95 s nas tentativas: passado o
+    # prazo, a rodada para em vez de repetir a espera em todos.
+    relogio = [0.0]
+    api = PncpForaUmTempo(set(coleta.ORGAOS), relogio, custo=200)
+    monkeypatch.setattr(coleta, "Pncp", lambda: api)
+    monkeypatch.setattr(coleta.time, "monotonic", lambda: relogio[0])
+    monkeypatch.setattr(sys, "argv", ["coleta.py", "--seco", "--prazo", "6"])
+    assert coleta.main() == 1
+    assert len(api.orgaos) == 2
+
+
 # --- conexão com o banco durante a rodada -----------------------------------
 
 

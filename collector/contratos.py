@@ -22,7 +22,7 @@ import argparse
 import logging
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import db
@@ -34,10 +34,21 @@ from pncp import Pncp
 log = logging.getLogger("contratos")
 
 
-def precisa_detalhe(modo, id_pncp, conhecidos, hoje):
-    """Contrato novo sempre; na completa, também o conhecido ainda vigente."""
+# Na rápida, contrato fora do banco só é buscado se foi publicado há menos que
+# isto. Os mais velhos são os de pessoa física, que o mapeamento descarta e
+# por isso nunca entram (7 em 2026-10-01, rebuscados a cada rodada), ou os que
+# uma rodada perdeu por falha — a completa diária pega estes.
+NOVO = timedelta(days=30)
+
+
+def precisa_detalhe(modo, id_pncp, conhecidos, hoje, publicado=None):
+    """Contrato novo; na completa, também o conhecido ainda vigente.
+
+    `publicado` é o dia da publicação no PNCP, da busca. Sem ele, o contrato
+    fora do banco conta como novo.
+    """
     if id_pncp not in conhecidos:
-        return True
+        return modo == "completa" or publicado is None or hoje - publicado <= NOVO
     fim = conhecidos[id_pncp]
     return modo == "completa" and (fim is None or fim >= hoje)
 
@@ -52,7 +63,9 @@ def coletar_orgao(api, banco, orgao_id, cnpj, modo, seco, hoje):
     novos = 0
     for item in api.buscar_contratos(orgao_id):
         id_pncp = item["numero_controle_pncp"]
-        if not precisa_detalhe(modo, id_pncp, conhecidos, hoje):
+        publicado = m.data(item.get("data_publicacao_pncp"))
+        publicado = publicado.date() if publicado else None
+        if not precisa_detalhe(modo, id_pncp, conhecidos, hoje, publicado):
             continue
         ano, seq = item["ano"], item["numero_sequencial"]
         detalhe = api.contrato(cnpj, ano, seq)
