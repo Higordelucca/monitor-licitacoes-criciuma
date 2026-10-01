@@ -100,7 +100,12 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           MODO: ${{ (inputs.modo == 'completa' || inputs.modo == 'tudo' || github.event.schedule == '15 6 * * *') && 'completa' || 'rapida' }}
-        run: python collector/contratos.py --modo "$MODO" ${{ inputs.seco && '--seco' || '' }}
+        # Na rápida, 3 min: depois disso nenhum órgão novo começa. Com os 6 da
+        # coleta e o pior caso de cada um, o job fica dentro dos 15.
+        run: |
+          PRAZO=""
+          if [ "$MODO" = rapida ]; then PRAZO="--prazo 3"; fi
+          python collector/contratos.py --modo "$MODO" $PRAZO ${{ inputs.seco && '--seco' || '' }}
 
   enriquecer:
     # Roda mesmo se a completa falhou: as fontes são outras. Empresa que entrou

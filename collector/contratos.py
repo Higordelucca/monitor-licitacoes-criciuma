@@ -12,12 +12,16 @@ A busca lista os contratos do órgão mas não diz o fornecedor nem a compra de
 origem; isso sai do detalhe, uma chamada por contrato. Por isso a rápida só
 busca detalhe de contrato novo. A completa refaz também os vigentes, que podem
 ter mudado de valor. Cada órgão vira uma linha `PNCP · Contratos · <órgão>` em
-sync_log; a falha de um não impede os seguintes, a não ser o PNCP fora do ar.
+sync_log; a falha de um não impede os seguintes, nem a do PNCP fora do ar: a
+busca dele cai em rajadas, e em 2026-09-30 parar no primeiro órgão que falhava
+deixava os do fim da fila sem conferir contrato. O que limita a rodada é o
+prazo (--prazo), passado o qual nenhum órgão novo começa.
 """
 
 import argparse
 import logging
 import sys
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -25,7 +29,7 @@ import db
 import mapeamento as m
 from coleta import registrar_falha
 from config import ORGAOS
-from pncp import Pncp, PncpFora
+from pncp import Pncp
 
 log = logging.getLogger("contratos")
 
@@ -68,11 +72,43 @@ def coletar_orgao(api, banco, orgao_id, cnpj, modo, seco, hoje):
     return novos
 
 
+def coletar_orgaos(api, banco, alvos, modo, seco, hoje, prazo=None, relogio=time.monotonic):
+    """Coleta os contratos de cada órgão. Devolve os nomes dos que falharam.
+
+    `prazo` em segundos, contado daqui: depois dele nenhum órgão novo começa
+    (o que já começou termina). Os que ficaram de fora mantêm a última linha
+    em sync_log e entram na próxima rodada.
+    """
+    inicio = relogio()
+    falhas = []
+    for orgao_id, (cnpj, nome) in alvos.items():
+        if prazo is not None and relogio() - inicio > prazo:
+            log.warning("prazo esgotado: contratos de %s ficam para a próxima rodada", nome)
+            break
+        sync_id = None
+        if banco:
+            sync_id = db.abrir_sync(banco.cursor(), f"PNCP · Contratos · {nome}")
+            banco.commit()
+        try:
+            novos = coletar_orgao(api, banco, orgao_id, cnpj, modo, seco, hoje)
+            if banco:
+                db.fechar_sync(banco.cursor(), sync_id, "ok", novos)
+                banco.commit()
+            log.info("%s: %d contratos novos", nome, novos)
+        except Exception as erro:  # noqa: BLE001 — um órgão não derruba os outros
+            if banco:
+                registrar_falha(banco, sync_id, 0, erro)
+            log.error("%s: FALHOU — %s", nome, erro)
+            falhas.append(nome)
+    return falhas
+
+
 def main():
     p = argparse.ArgumentParser(description="Coleta contratos do PNCP.")
     p.add_argument("--orgao", type=int, help="só este orgao_id")
     p.add_argument("--seco", action="store_true", help="não grava, só relata")
     p.add_argument("--modo", choices=["rapida", "completa"], default="rapida")
+    p.add_argument("--prazo", type=float, help="minutos; depois disso nenhum órgão novo começa")
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -84,29 +120,12 @@ def main():
     hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
 
     banco = None if args.seco else db.Banco()
+    prazo = args.prazo * 60 if args.prazo else None
     falhas = []
     db.interromper_no_sigterm()
     try:
         with Pncp() as api:
-            for orgao_id, (cnpj, nome) in alvos.items():
-                sync_id = None
-                if banco:
-                    sync_id = db.abrir_sync(banco.cursor(), f"PNCP · Contratos · {nome}")
-                    banco.commit()
-                try:
-                    novos = coletar_orgao(api, banco, orgao_id, cnpj, args.modo, args.seco, hoje)
-                    if banco:
-                        db.fechar_sync(banco.cursor(), sync_id, "ok", novos)
-                        banco.commit()
-                    log.info("%s: %d contratos novos", nome, novos)
-                except Exception as erro:  # noqa: BLE001 — um órgão não derruba os outros
-                    if banco:
-                        registrar_falha(banco, sync_id, 0, erro)
-                    log.error("%s: FALHOU — %s", nome, erro)
-                    falhas.append(nome)
-                    if isinstance(erro, PncpFora):
-                        log.error("PNCP fora do ar: rodada interrompida")
-                        break
+            falhas = coletar_orgaos(api, banco, alvos, args.modo, args.seco, hoje, prazo)
     except KeyboardInterrupt:
         if banco:
             db.interromper(banco)

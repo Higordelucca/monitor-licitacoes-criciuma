@@ -9,6 +9,7 @@ from datetime import date
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
 import contratos
+from pncp import PncpFora
 
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
 HOJE = date(2026, 9, 25)
@@ -76,3 +77,53 @@ def test_leitura_dos_conhecidos_nao_deixa_transacao_aberta_esperando_o_pncp(monk
     )
     contratos.coletar_orgao(Api(), Banco(), 85877, "82916818000113", "rapida", False, HOJE)
     assert passos == ["conhecidos", "commit", "busca"]
+
+
+# --- vários órgãos, falha e prazo --------------------------------------------
+
+ALVOS = {1: ("11111111000111", "A"), 2: ("22222222000122", "B"), 3: ("33333333000133", "C")}
+
+
+class ApiPorOrgao(ApiFalsa):
+    """A busca do órgão em `fora` esgota as tentativas; cada busca avança o
+    relógio em `custo` segundos."""
+
+    def __init__(self, fora=(), relogio=None, custo=0):
+        super().__init__()
+        self.fora, self.relogio, self.custo = set(fora), relogio, custo
+        self.buscados = []
+
+    def buscar_contratos(self, orgao_id):
+        self.buscados.append(orgao_id)
+        if self.relogio:
+            self.relogio[0] += self.custo
+        if orgao_id in self.fora:
+            raise PncpFora("https://pncp.gov.br/api/search/: [Errno 104] Connection reset by peer")
+        return []
+
+
+def test_busca_que_cai_num_orgao_nao_impede_os_seguintes():
+    # Em 2026-09-30 a busca caiu nos contratos da Fundação Cultural e a
+    # rodada parou ali: quatro órgãos ficaram sem conferir contrato.
+    api = ApiPorOrgao(fora={2})
+    falhas = contratos.coletar_orgaos(api, None, ALVOS, "rapida", True, HOJE)
+    assert api.buscados == [1, 2, 3]
+    assert falhas == ["B"]
+
+
+def test_passado_o_prazo_nenhum_orgao_novo_comeca():
+    agora = [0.0]
+    api = ApiPorOrgao(fora={1, 2, 3}, relogio=agora, custo=95)
+    falhas = contratos.coletar_orgaos(
+        api, None, ALVOS, "rapida", True, HOJE, prazo=150, relogio=lambda: agora[0]
+    )
+    # A começa em 0 s e B em 95 s, dentro do prazo; C começaria em 190 s.
+    assert api.buscados == [1, 2]
+    assert falhas == ["A", "B"]
+
+
+def test_sem_prazo_todos_os_orgaos_rodam():
+    agora = [0.0]
+    api = ApiPorOrgao(relogio=agora, custo=1000)
+    contratos.coletar_orgaos(api, None, ALVOS, "completa", True, HOJE, relogio=lambda: agora[0])
+    assert api.buscados == [1, 2, 3]
